@@ -1,0 +1,18 @@
+[Unit]
+Description=Notification when a door, window, sunroof or trunk stays open (BMW/MINI CarData stream)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=miniwatch
+WorkingDirectory=/opt/mini-watch
+ExecStart=/usr/local/bin/node /opt/mini-watch/mini_watch.mjs run
+# BMW limits many connection attempts in a short time. After a crash, wait 30 seconds.
+Restart=always
+RestartSec=30
+StandardOutput=append:/opt/mini-watch/run.log
+StandardError=append:/opt/mini-watch/run.log
+
+[Install]
+WantedBy=multi-user.target

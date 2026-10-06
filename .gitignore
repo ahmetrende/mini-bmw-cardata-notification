@@ -1,0 +1,16 @@
+# Bağımlılıklar
+node_modules/
+
+# Kişisel ayar ve gizli bilgiler
+config.json
+tokens.json
+
+# Çalışma verisi
+state.json
+messages.jsonl
+run.log
+
+# Yerel notlar
+.claude/
+.gcp_project
+.DS_Store

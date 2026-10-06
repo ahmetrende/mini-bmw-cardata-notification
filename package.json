@@ -1,0 +1,32 @@
+{
+  "name": "mini-bmw-cardata-notification",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phone notification when a door, window, sunroof, trunk or hood stays open on your MINI or BMW. Uses the BMW CarData stream.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "login": "node mini_watch.mjs login",
+    "start": "node mini_watch.mjs run",
+    "ntfy-test": "node mini_watch.mjs ntfy-test",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "mqtt": "^5.16.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahmetrende/mini-bmw-cardata-notification.git"
+  },
+  "keywords": [
+    "bmw",
+    "mini",
+    "cardata",
+    "mqtt",
+    "ntfy",
+    "notification"
+  ]
+}

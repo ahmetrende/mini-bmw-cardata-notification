@@ -1,0 +1,130 @@
+# Step 4 of 5: Run and update the program
+
+[Türkçe](../tr/05-isletim.md) · [README](../../README.md)
+
+Run all commands on the server. To connect:
+
+```bash
+gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
+```
+
+## Daily commands
+
+| Task | Command |
+|---|---|
+| Status | `systemctl status mini-watch --no-pager` |
+| Live log | `sudo tail -f /opt/mini-watch/run.log` |
+| Log without message lines | `sudo grep -v "Message:" /opt/mini-watch/run.log \| tail -30` |
+| Sent notifications | `sudo grep "Notification" /opt/mini-watch/run.log \| tail -20` |
+| Restart | `sudo systemctl restart mini-watch` |
+| Stop | `sudo systemctl stop mini-watch` |
+| Test notification | `sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs ntfy-test` |
+
+To watch the log from your computer with one command:
+
+```bash
+gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --command='sudo tail -f /opt/mini-watch/run.log'
+```
+
+## Log lines
+
+| Line | Meaning |
+|---|---|
+| `Connected to the stream.` and `Subscribed: qos0` | The connection is good. |
+| `Message: vehicle....` | Data arrived from the car. |
+| `Notification sent: ...` | A notification went to your phone. |
+| `The token expires soon. Refreshing it.` | The normal refresh. It happens each hour. |
+| `Reconnecting in 5 seconds.` | The connection closed. The program reconnects. You see this line each hour after a token refresh. |
+| `MQTT error: Keepalive timeout` | A network break. It is normal when rare. If it is frequent, check the network. |
+| `Could not refresh the token ...` | You must log in again. See below. |
+| `Notification failed: ...` | ntfy was not reachable. Check the topic name and the network. |
+
+## Change a setting
+
+```bash
+sudo nano /opt/mini-watch/config.json
+sudo systemctl restart mini-watch
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `language` | `en` | Language of the notification text: `en` or `tr` |
+| `timezone` | server time zone | Time zone of the times in the notification. Example: `Europe/Istanbul` |
+| `alert_after_min` | 3 | Wait time after parking, before a notification |
+| `remind_every_min` | 60 | Reminder time when a part is still open |
+| `park_after_idle_min` | 10 | The car counts as parked when the odometer is still for this time |
+| `ntfy_server` | `https://ntfy.sh` | The address of your own ntfy server |
+
+## Update the program
+
+1. Connect to the server.
+2. Run:
+
+```bash
+cd ~/mini-bmw-cardata-notification
+git pull
+sudo bash deploy/install.sh
+```
+
+The script does not change `config.json` or `tokens.json`. It restarts the service if the service runs.
+
+## Log in again
+
+You must log in again in these cases:
+
+- The server was off for more than 2 weeks. The refresh key expired.
+- You deleted the Client ID in the portal, or you turned off a subscription.
+- The log shows `Could not refresh the token`.
+
+```bash
+sudo systemctl stop mini-watch
+sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs login
+sudo systemctl start mini-watch
+```
+
+For the login steps, see [Step 3](04-server-setup.md), part 7.
+
+## Troubleshooting
+
+| Problem | Possible cause | Fix |
+|---|---|---|
+| The log has no `Message:` lines | The car is asleep. | Send a remote light signal, or open and close a door. |
+| No `Message:` lines, and you use the car | The stream is not set up. | In the portal, check that **Configuration status** shows **ready**. |
+| `Connection refused` | The token scope is incomplete. | Check the two subscriptions. Log in again. |
+| Many `Reconnecting` lines | The program runs in another place with the same account. | Stop the other copy. The account allows one connection. |
+| A notification comes while you drive | The stream has no `travelledDistance`. | Add that attribute in the portal. |
+| No notification for a tilted sunroof | The stream has no `tiltStatus`. | Add that attribute in the portal. |
+| The log shows "Notification sent", but the phone shows nothing | No subscription, or notifications are off. | Check the topic name and the phone permissions in the ntfy app. |
+| SSH shows "Connection timed out" | The `--tunnel-through-iap` flag is missing. | Add the flag. The server accepts only the IAP tunnel. |
+
+## Restart the server
+
+Use a normal shutdown:
+
+```bash
+sudo systemctl reboot
+```
+
+Do not use the **Reset** button in the console. Do not use `gcloud compute instances reset`. A hard reset can damage files that you wrote a moment before.
+
+## Disk use
+
+`run.log` and `messages.jsonl` grow all the time. They use a few MB each day. A 30 GB disk lasts for years. To clean them:
+
+```bash
+sudo systemctl stop mini-watch
+sudo truncate -s 0 /opt/mini-watch/run.log
+sudo -u miniwatch sh -c 'tail -n 5000 /opt/mini-watch/messages.jsonl > /tmp/m && mv /tmp/m /opt/mini-watch/messages.jsonl'
+sudo systemctl start mini-watch
+```
+
+## Delete everything
+
+1. In the portal, press **Delete stream** and **Delete Client**.
+2. Delete the Google Cloud project:
+   ```bash
+   gcloud projects delete PROJECT_NAME
+   ```
+3. Delete the ntfy subscription on your phone.
+
+**Next step:** Read [How it works](01-how-it-works.md). This page is optional.
