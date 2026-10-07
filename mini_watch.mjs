@@ -6,7 +6,7 @@
 //   node mini_watch.mjs run        # listen to the stream (runs forever)
 //   node mini_watch.mjs ntfy-test  # send a test notification to the phone
 import { createHash, randomBytes } from 'node:crypto';
-import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mqtt from 'mqtt';
@@ -26,18 +26,24 @@ const HEALTHY_CONNECTION_S = 120;
 const RECONNECT_MIN_S = 5;
 const RECONNECT_MAX_S = 60;
 const REPLAY_HOURS = 24;
+const HTTP_TIMEOUT_MS = 15_000;
+const NOTIFY_RETRY_MIN_S = 30; // After a failed notification, try again after 30, 60, 120 ... seconds.
+const NOTIFY_RETRY_MAX_S = 600;
+const EXAMPLE_TOPIC = 'mini-your-long-random-name'; // The example topic of older versions. Everybody knows it.
+const MIN_TOPIC_LENGTH = 16;
 
-// Attributes that carry an open or closed state. The charge flap and the trunk lock are not included.
+// Attributes that carry an open or closed state. The charge flap, the trunk lock and the
+// door lock (vehicle.cabin.door.status) are not included.
 const WATCHED = [
-  'vehicle.cabin.window.',
-  'vehicle.cabin.door.',
-  'vehicle.cabin.sunroof.status',
-  'vehicle.cabin.sunroof.tiltStatus',
-  'vehicle.body.trunk.isOpen',
-  'vehicle.body.trunk.door.isOpen',
-  'vehicle.body.hood.isOpen',
+  /^vehicle\.cabin\.window\.row\d\.(driver|passenger)\.status$/,
+  /^vehicle\.cabin\.door\.row\d\.(driver|passenger)\.isOpen$/,
+  /^vehicle\.cabin\.sunroof\.(status|tiltStatus)$/,
+  /^vehicle\.body\.trunk\.(isOpen|door\.isOpen)$/,
+  /^vehicle\.body\.hood\.isOpen$/,
 ];
 const OPEN_VALUES = new Set(['OPEN', 'INTERMEDIATE', 'TRUE']);
+// Only these values close a part. An unknown or empty value keeps the last known state.
+const CLOSED_VALUES = new Set(['CLOSED', 'FALSE']);
 const IGNITION = 'vehicle.drivetrain.engine.isIgnitionOn';
 const MOVING = 'vehicle.isMoving';
 const ODOMETER = 'vehicle.vehicle.travelledDistance';
@@ -120,6 +126,21 @@ const log = (msg) => console.log(new Date().toTimeString().slice(0, 8), msg);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const now = () => Date.now() / 1000;
 
+// Writes a file so that a crash leaves the old file or the new file, never a half file.
+// The temporary file gets mode 0600 when it is made, so nobody else can read it at any time.
+function writeFileAtomic(path, text) {
+  const tmp = `${path}.tmp`;
+  rmSync(tmp, { force: true });
+  const fd = openSync(tmp, 'wx', 0o600);
+  try {
+    writeSync(fd, text);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, path);
+}
+
 export const DEFAULT_CONFIG = {
   language: 'en',
   timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
@@ -131,15 +152,31 @@ export const DEFAULT_CONFIG = {
   ntfy_topic: '',
 };
 
-function loadConfig() {
-  const cfg = { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(CONFIG, 'utf8')) };
+// Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
+const MINUTE_SETTINGS = { alert_after_min: 0, remind_every_min: 1, remind_max_min: 1, park_after_idle_min: 1 };
+const MAX_MINUTES = 7 * 24 * 60;
+
+export function checkConfig(cfg) {
   if (!TEXT[cfg.language]) throw new Error(`Unknown language "${cfg.language}". Use "en" or "tr".`);
   try {
     new Intl.DateTimeFormat('en-GB', { timeZone: cfg.timezone || undefined });
   } catch {
     throw new Error(`Unknown timezone "${cfg.timezone}". Use a name like "Europe/Istanbul".`);
   }
+  for (const [key, min] of Object.entries(MINUTE_SETTINGS)) {
+    const value = cfg[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > MAX_MINUTES) {
+      throw new Error(`"${key}" must be a number of minutes from ${min} to ${MAX_MINUTES}. Now it is ${JSON.stringify(value)}.`);
+    }
+  }
+  const known = new Set([...Object.keys(DEFAULT_CONFIG), 'client_id']);
+  const unknown = Object.keys(cfg).filter((key) => !known.has(key));
+  if (unknown.length) log(`Warning: config.json has unknown settings: ${unknown.join(', ')}. The program ignores them.`);
   return cfg;
+}
+
+function loadConfig() {
+  return checkConfig({ ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(CONFIG, 'utf8')) });
 }
 
 function requireClientId(cfg) {
@@ -148,11 +185,23 @@ function requireClientId(cfg) {
   }
 }
 
+// Anybody who knows the topic name can read the notifications. An example name or a short name is not safe.
+export function checkTopic(cfg) {
+  const topic = String(cfg.ntfy_topic ?? '');
+  if (!topic || topic.startsWith('YOUR-') || topic === EXAMPLE_TOPIC || topic.length < MIN_TOPIC_LENGTH) {
+    throw new Error(
+      `Set "ntfy_topic" in config.json to a long random name (${MIN_TOPIC_LENGTH} characters or more). ` +
+        'Make one with: echo "mini-$(openssl rand -hex 9)". See docs/en/03-ntfy.md.',
+    );
+  }
+}
+
 async function postForm(url, data) {
   const resp = await fetch(url, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(data),
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   });
   const text = await resp.text();
   try {
@@ -170,8 +219,7 @@ function saveTokens(resp) {
     gcid: resp.gcid,
     id_expires_at: now() + Number(resp.expires_in ?? 3600),
   };
-  writeFileSync(TOKENS, JSON.stringify(tokens));
-  chmodSync(TOKENS, 0o600);
+  writeFileAtomic(TOKENS, JSON.stringify(tokens));
   return tokens;
 }
 
@@ -194,12 +242,19 @@ async function login(cfg) {
   const deadline = now() + Number(resp.expires_in);
   while (now() < deadline) {
     await sleep(interval * 1000);
-    const tok = await postForm(`${OAUTH}/token`, {
-      client_id: cfg.client_id,
-      device_code: resp.device_code,
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      code_verifier: verifier,
-    });
+    let tok;
+    try {
+      tok = await postForm(`${OAUTH}/token`, {
+        client_id: cfg.client_id,
+        device_code: resp.device_code,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        code_verifier: verifier,
+      });
+    } catch (err) {
+      if (err.name !== 'TimeoutError') throw err;
+      log('The login server did not answer in time. Trying again.');
+      continue;
+    }
     if (tok.id_token) {
       saveTokens(tok);
       log(`Login done. Granted scope: ${tok.scope}`);
@@ -233,10 +288,11 @@ async function getTokens(cfg) {
 const NTFY_PRIORITY = { default: 3, high: 4 };
 
 // A title in an HTTP header fails for letters outside Latin-1. A JSON body carries UTF-8.
+// Returns true only when ntfy accepted the message (HTTP 2xx). An empty topic prints the text and returns true.
 export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning') {
   if (!cfg.ntfy_topic) {
     log(`[ntfy off] ${title}: ${text}`);
-    return;
+    return true;
   }
   try {
     const resp = await fetch(cfg.ntfy_server, {
@@ -249,10 +305,13 @@ export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning'
         priority: NTFY_PRIORITY[priority] ?? 3,
         tags: tags.split(','),
       }),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
     log(resp.ok ? `Notification sent: ${text}` : `Notification failed: HTTP ${resp.status}`);
+    return resp.ok;
   } catch (err) {
     log(`Notification failed: ${err.message}`);
+    return false;
   }
 }
 
@@ -292,6 +351,9 @@ export class Watcher {
     this.lastKm = null;
     this.kmChangedAt = 0; // time the odometer last increased
     this.lastDriverDoorAt = 0; // time the driver door last opened (to get in or to get out)
+    this.notifyFailures = 0; // failed notifications in a row
+    this.retryAt = 0; // after a failed notification, the next try waits until this time
+    this.unknownSeen = new Set(); // unknown values that are already in the log
   }
 
   // Some cars (the tested Countryman E, U25) send no ignition or motion data.
@@ -315,14 +377,15 @@ export class Watcher {
       alerted: this.alerted,
       savedAt: this.clock(),
     };
-    writeFileSync(STATE, JSON.stringify(state));
+    writeFileAtomic(STATE, JSON.stringify(state));
   }
 
-  // Ignore a saved state that is older than the last odometer increase (the car drove since) or older than 2 hours.
+  // Ignore a saved state that is older than the last odometer increase (the car drove since)
+  // or older than the replayed history (REPLAY_HOURS).
   loadState() {
     try {
       const state = JSON.parse(readFileSync(STATE, 'utf8'));
-      if (state.savedAt < this.kmChangedAt || this.clock() - state.savedAt > 2 * 3600) return false;
+      if (state.savedAt < this.kmChangedAt || this.clock() - state.savedAt > REPLAY_HOURS * 3600) return false;
       this.notified = new Set(state.notified);
       this.lastNotify = state.lastNotify;
       this.reminders = state.reminders ?? 0;
@@ -359,12 +422,15 @@ export class Watcher {
       } else if (name === DRIVER_DOOR && parseBool(item?.value) === true) {
         this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
       }
-      if (!WATCHED.some((prefix) => name.startsWith(prefix)) || name.endsWith('.position')) continue;
+      if (!WATCHED.some((pattern) => pattern.test(name))) continue;
       const value = String(item?.value ?? '').toUpperCase();
       if (OPEN_VALUES.has(value)) {
         if (!this.openSince.has(name)) this.openSince.set(name, at);
-      } else if (this.openSince.delete(name)) {
-        this.sawClose = true;
+      } else if (CLOSED_VALUES.has(value)) {
+        if (this.openSince.delete(name)) this.sawClose = true;
+      } else if (!this.unknownSeen.has(`${name}=${value}`)) {
+        this.unknownSeen.add(`${name}=${value}`);
+        log(`Unknown value "${value}" for ${name}. The last known state stays.`);
       }
     }
     if (this.ignition === true || this.moving === true) {
@@ -375,8 +441,24 @@ export class Watcher {
     }
   }
 
+  // A failed notification does not change the state. The next check sends it again,
+  // after a wait that doubles each time: 30 seconds up to 10 minutes.
+  notifyResult(ok) {
+    if (ok) {
+      this.notifyFailures = 0;
+      this.retryAt = 0;
+      return true;
+    }
+    const wait = Math.min(NOTIFY_RETRY_MIN_S * 2 ** this.notifyFailures, NOTIFY_RETRY_MAX_S);
+    this.notifyFailures += 1;
+    this.retryAt = this.clock() + wait;
+    log(`The program tries the notification again in ${wait} seconds.`);
+    return false;
+  }
+
   async check() {
     if (this.isDriving()) return; // No notification while driving.
+    if (this.clock() < this.retryAt) return; // Wait after a failed notification.
     const t = textFor(this.cfg);
     const wait = this.cfg.alert_after_min * 60;
     // The timer starts when the part opened or when the car parked, whichever is later.
@@ -390,7 +472,8 @@ export class Watcher {
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {
-        await ntfy(this.cfg, t.closedTitle, t.closedBody, 'default', 'white_check_mark');
+        const sent = await ntfy(this.cfg, t.closedTitle, t.closedBody, 'default', 'white_check_mark');
+        if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
         this.saveState();
@@ -398,7 +481,6 @@ export class Watcher {
       return;
     }
     if (current.size === 0) return; // A part is open but the wait time is not over.
-    this.alerted = true;
     this.sawClose = false;
     const added = [...current].some((name) => !this.notified.has(name));
     // Each reminder waits twice as long as the one before: 60, 120, 240 minutes, up to remind_max_min.
@@ -410,7 +492,9 @@ export class Watcher {
         .sort((a, b) => this.openSince.get(a) - this.openSince.get(b))
         .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(this.openSince.get(name), this.cfg))}`)
         .join(', ');
-      await ntfy(this.cfg, added ? t.openTitle : t.stillOpenTitle, t.openBody(items));
+      const sent = await ntfy(this.cfg, added ? t.openTitle : t.stillOpenTitle, t.openBody(items));
+      if (!this.notifyResult(sent)) return;
+      this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
       this.notified = current;
       this.lastNotify = this.clock();
@@ -420,21 +504,35 @@ export class Watcher {
 }
 
 // A restart must not lose the odometer and door history. Replay the messages of the last 24 hours.
-function replayRecent(watcher) {
+// A broken line (for example the last line after a crash) is skipped. The other lines still count.
+export function replayRecent(watcher, file = MESSAGES) {
   let count = 0;
+  let broken = 0;
+  let text = '';
   try {
-    const cutoff = now() - REPLAY_HOURS * 3600;
-    for (const line of readFileSync(MESSAGES, 'utf8').trim().split('\n')) {
-      const msg = JSON.parse(line);
-      if (msg.t < cutoff) continue;
-      watcher.onData(JSON.parse(msg.payload).data ?? {}, msg.t);
-      count += 1;
-    }
+    text = readFileSync(file, 'utf8');
   } catch {
-    // No file, or a broken line. Start with an empty state.
+    // No file yet. Start with an empty state.
+  }
+  const cutoff = watcher.clock() - REPLAY_HOURS * 3600;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let msg;
+    let data;
+    try {
+      msg = JSON.parse(line);
+      data = JSON.parse(msg.payload).data ?? {};
+    } catch {
+      broken += 1;
+      continue;
+    }
+    if (!(msg.t >= cutoff)) continue;
+    watcher.onData(data, msg.t);
+    count += 1;
   }
   const lastKm = watcher.kmChangedAt ? new Date(watcher.kmChangedAt * 1000).toTimeString().slice(0, 8) : 'none';
-  log(`History loaded: ${count} messages. Last odometer increase: ${lastKm}.`);
+  log(`History loaded: ${count} messages${broken ? `, ${broken} broken lines skipped` : ''}. Last odometer increase: ${lastKm}.`);
+  return { count, broken };
 }
 
 async function run(cfg) {
@@ -466,17 +564,23 @@ async function run(cfg) {
       rejectUnauthorized: true,
     });
     const startedAt = now();
-    let connected = false;
+    let subscribed = false; // A connection without a subscription gets no data. It does not count as healthy.
     let closed = false;
     let onClosed;
     const closedSignal = new Promise((resolve) => {
       onClosed = resolve;
     });
     client.on('connect', () => {
-      connected = true;
       log('Connected to the stream.');
       client.subscribe(`${gcid}/+`, { qos: 0 }, (err, granted) => {
-        log(err ? `Subscribe error: ${err.message}` : `Subscribed: ${granted.map((g) => `qos${g.qos}`).join(',')}`);
+        if (err || !granted?.length) {
+          // Without a subscription no message comes. Close the connection. The outer loop connects again.
+          log(`Subscribe error: ${err?.message ?? 'no topic granted'}. Reconnecting.`);
+          client.end(true);
+          return;
+        }
+        subscribed = true;
+        log(`Subscribed: ${granted.map((g) => `qos${g.qos}`).join(',')}`);
       });
     });
     client.on('message', (_topic, payload) => {
@@ -506,7 +610,7 @@ async function run(cfg) {
 
     // After a healthy connection (2 minutes or more) reconnect fast. After repeated short connections
     // the wait doubles from 5 to 60 seconds. BMW limits many connection attempts in a short time.
-    const healthy = connected && now() - startedAt >= HEALTHY_CONNECTION_S;
+    const healthy = subscribed && now() - startedAt >= HEALTHY_CONNECTION_S;
     failures = healthy ? 0 : failures + 1;
     const delay = Math.min(RECONNECT_MIN_S * 2 ** failures, RECONNECT_MAX_S);
     log(`Reconnecting in ${delay} seconds.`);
@@ -519,6 +623,7 @@ async function main() {
   try {
     const cfg = loadConfig();
     if (command === 'login' || command === 'run') requireClientId(cfg);
+    if (command === 'run' || command === 'ntfy-test') checkTopic(cfg);
     if (command === 'run' && !existsSync(TOKENS)) {
       throw new Error('tokens.json not found. Run the "login" command first (docs/en/04-server-setup.md, part 7).');
     }

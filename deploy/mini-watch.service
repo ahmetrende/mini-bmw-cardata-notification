@@ -1,5 +1,5 @@
 [Unit]
-Description=Notification when a door, window, sunroof or trunk stays open (BMW/MINI CarData stream)
+Description=Notification when a door, window, sunroof, trunk or hood stays open (BMW/MINI CarData stream)
 After=network-online.target
 Wants=network-online.target
 

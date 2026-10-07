@@ -37,7 +37,10 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 | `Reconnecting in 5 seconds.` | The connection closed. The program reconnects. You see this line each hour after a token refresh. |
 | `MQTT error: Keepalive timeout` | A network break. It is normal when rare. If it is frequent, check the network. |
 | `Could not refresh the token ...` | You must log in again. See below. |
-| `Notification failed: ...` | ntfy was not reachable. Check the topic name and the network. |
+| `Notification failed: ...` | ntfy was not reachable. The program tries again after 30 seconds, then waits longer each time, up to 10 minutes. If the line repeats, check the topic name and the network. |
+| `Subscribe error: ... Reconnecting.` | The stream refused the subscription. The program connects again. If the line repeats, make sure that **CarData Stream** is on in the portal. |
+| `Unknown value "..." for ...` | The car sent a value that the program does not know. The part keeps its last state. Please open an issue and add this line. |
+| `Set "ntfy_topic" ...` or `"..." must be a number of minutes ...` | The program did not start. A value in `config.json` is wrong. Correct it and restart the service. |
 
 ## Change a setting
 

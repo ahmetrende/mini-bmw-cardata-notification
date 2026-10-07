@@ -56,14 +56,16 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. En eski açılan parça başta durur.
 - **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa son 24 saatin mesajlarını yeniden okur ve o dönemin gerçek saatlerini korur. 24 saatten uzun süredir açık kalan bir parçanın saati, okumanın başladığı an olarak görünür.
 - **Yeni bir parça açılırsa.** Bekleme süresi dolunca yeni bir bildirim düşer. Bu bildirim de tüm açık parçaları sıralar.
-- **Hepsini kapatırsan.** Tek bir mesaj gelir ve her şeyin kapandığını söyler. Bu mesaj, daha önce bir bildirim gelmişse gelir. Program bu mesajı yalnızca bir parçanın kapandığını gördüğünde yollar. Veri gelmemesi "kapandı" anlamına gelmez.
+- **Hepsini kapatırsan.** Tek bir mesaj gelir ve her şeyin kapandığını söyler. Bu mesaj, daha önce bir bildirim gelmişse gelir. Program bu mesajı yalnızca bir parçanın kapandığını gördüğünde yollar. Veri gelmemesi "kapandı" anlamına gelmez. Yalnızca `CLOSED` ve `false` değerleri kapalı sayılır. Bilinmeyen bir değer durumu değiştirmez.
 - **Yeniden yola çıkarsan.** Program eski bildirimi unutur. Bir sonraki parkta yeni bir bildirim gelebilir.
 
 ## Bir şey ters giderse ne olur?
 
 - **Token yenileme.** Akış parolası (ID token) 1 saat geçerli. Program parolayı süresi dolmadan 5 dakika önce yeniler. Yenileme anahtarı 2 hafta geçerli ve her yenilemede süresi uzar. Sunucu 2 haftadan uzun kapalı kalırsa yeniden giriş yapman gerekir.
 - **Bağlantı kopması.** Sağlıklı bir bağlantı kapanırsa program 5 saniye sonra yeniden bağlanır. Bağlantı art arda kısa sürede koparsa bekleme süresi 60 saniyeye kadar ikiye katlanır. BMW, kısa sürede çok sayıda bağlantı denemesini sınırlar.
-- **Yeniden başlama.** Program son 24 saatin mesajlarını yeniden okur. Kilometre ve kapı geçmişi kaybolmaz. Yolladığı bildirimleri `state.json` dosyasına yazar. Aynı bildirim ikinci kez gitmez.
+- **Yeniden başlama.** Program son 24 saatin mesajlarını yeniden okur. Kilometre ve kapı geçmişi kaybolmaz. Yolladığı bildirimleri `state.json` dosyasına yazar. Aynı bildirim ikinci kez gitmez. Geçmişteki bozuk bir satırı atlar.
+- **ntfy'ye ulaşılamazsa.** Program bildirimi gönderilmiş saymaz. 30 saniye sonra yeniden dener. Her yeni deneme bir öncekinin iki katı bekler, en çok 10 dakika.
+- **Abonelik hatası.** Akış aboneliği reddederse program bağlantıyı kapatır ve yeniden bağlanır.
 - **Her mesajda tam durum.** Araç, seçtiğin tüm öznitelikleri her mesajda yollar. Kaybolan bir mesaj, bir durumu uzun süre gizlemez.
 
 ## İleride yeni olaylar

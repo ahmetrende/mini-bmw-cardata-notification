@@ -152,7 +152,7 @@ Ayarları düzenle:
 sudo nano /opt/mini-watch/config.json
 ```
 
-`client_id` ve `ntfy_topic` değerlerini kendi değerlerinle değiştir. `language` alanını `en` veya `tr` yap. `timezone` alanına kendi saat dilimini yaz, örneğin `Europe/Istanbul`. Bildirimlerdeki saatler bu ayara göre yazılır. Kaydetmek için `Ctrl+O`, `Enter`, `Ctrl+X` tuşlarına bas.
+`client_id` ve `ntfy_topic` değerlerini kendi değerlerinle değiştir. Program örnek konu adıyla veya 16 karakterden kısa bir adla başlamaz. `language` alanını `en` veya `tr` yap. `timezone` alanına kendi saat dilimini yaz, örneğin `Europe/Istanbul`. Bildirimlerdeki saatler bu ayara göre yazılır. Kaydetmek için `Ctrl+O`, `Enter`, `Ctrl+X` tuşlarına bas.
 
 ## 7. Araç hesabınla giriş yap
 

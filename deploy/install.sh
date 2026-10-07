@@ -19,9 +19,12 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-node_major() { node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
+# The service starts $NODE (see deploy/mini-watch.service). So check that file, not any node on the PATH.
+NODE=/usr/local/bin/node
+NPM=/usr/local/bin/npm
+node_major() { "$NODE" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
 
-if ! command -v node >/dev/null || [ "$(node_major)" -lt "$NODE_MAJOR" ]; then
+if [ ! -x "$NODE" ] || [ "$(node_major)" -lt "$NODE_MAJOR" ]; then
   echo "Installing Node $NODE_MAJOR..."
   case "$(uname -m)" in
     x86_64) ARCH=x64 ;;
@@ -37,7 +40,7 @@ if ! command -v node >/dev/null || [ "$(node_major)" -lt "$NODE_MAJOR" ]; then
   tar -xJf "$TMP/$FILE" -C /usr/local --strip-components=1
   rm -rf "$TMP"
 fi
-echo "Node: $(node -v), OpenSSL: $(node -p process.versions.openssl)"
+echo "Node: $("$NODE" -v), OpenSSL: $("$NODE" -p process.versions.openssl)"
 
 id miniwatch >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin miniwatch
 install -d -o miniwatch -g miniwatch "$APP"
@@ -48,7 +51,7 @@ if [ ! -f "$APP/config.json" ]; then
   NEW_CONFIG=1
 fi
 
-(cd "$APP" && sudo -u miniwatch HOME="$APP" npm ci --omit=dev --silent)
+(cd "$APP" && sudo -u miniwatch HOME="$APP" PATH="/usr/local/bin:/usr/bin:/bin" "$NPM" ci --omit=dev --silent)
 
 install -o root -g root -m 644 "$REPO/deploy/mini-watch.service" /etc/systemd/system/mini-watch.service
 systemctl daemon-reload

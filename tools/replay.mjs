@@ -39,9 +39,12 @@ let clock = start;
 const watcher = new Watcher(cfg, { clock: () => clock });
 const realLog = console.log;
 let count = 0;
+// Notification lines start with "[ntfy off]". Other log lines show with "(log)" and do not count.
 console.log = (...parts) => {
-  count += 1;
-  realLog(formatTime(clock, cfg, end), parts.slice(1).join(' ').replace('[ntfy off] ', ''));
+  const text = parts.slice(1).join(' ');
+  const notification = text.startsWith('[ntfy off] ');
+  if (notification) count += 1;
+  realLog(formatTime(clock, cfg, end), notification ? text.slice('[ntfy off] '.length) : `(log) ${text}`);
 };
 
 let next = 0;

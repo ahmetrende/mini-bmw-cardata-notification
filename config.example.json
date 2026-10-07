@@ -1,8 +1,8 @@
 {
   "client_id": "YOUR-CLIENT-ID-FROM-THE-PORTAL",
-  "ntfy_topic": "mini-your-long-random-name",
+  "ntfy_topic": "YOUR-RANDOM-TOPIC-NAME",
   "language": "en",
-  "timezone": "Europe/Istanbul",
+  "timezone": "",
   "alert_after_min": 10,
   "remind_every_min": 60,
   "remind_max_min": 480,

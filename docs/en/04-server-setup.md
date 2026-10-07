@@ -152,7 +152,7 @@ Edit the settings:
 sudo nano /opt/mini-watch/config.json
 ```
 
-Replace `client_id` and `ntfy_topic` with your values. Set `language` to `en` or `tr`. Set `timezone` to your own time zone, for example `Europe/London`. The times in the notifications use this setting. Save: `Ctrl+O`, `Enter`, `Ctrl+X`.
+Replace `client_id` and `ntfy_topic` with your values. The program does not start with the example topic name or with a name shorter than 16 characters. Set `language` to `en` or `tr`. Set `timezone` to your own time zone, for example `Europe/London`. The times in the notifications use this setting. Save: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
 ## 7. Log in to your car account
 

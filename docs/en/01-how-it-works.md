@@ -56,14 +56,16 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 - **One message.** A notification lists all open parts. The oldest part comes first.
 - **Time of each part.** A part shows "since 13:48". This is the time the program first saw the part open. For an earlier day, the notification shows the date too, for example "since 6 Oct 13:48". After a restart, the program replays the messages of the last 24 hours. It keeps the original times from that period. A part that was open for more than 24 hours shows the start of the replay as its time.
 - **A new part opens.** After the wait time you get a new notification. It lists all open parts.
-- **All parts close.** You get one message that says everything is closed. This message follows an earlier notification. The program sends it only after it sees a part close. Missing data does not count as closed.
+- **All parts close.** You get one message that says everything is closed. This message follows an earlier notification. The program sends it only after it sees a part close. Missing data does not count as closed. Only the values `CLOSED` and `false` count as closed. An unknown value does not change the state.
 - **You drive again.** The program forgets the old notification. The next parking can send a new one.
 
 ## What happens after a failure
 
 - **Token refresh.** The stream password (ID token) is valid for 1 hour. The program refreshes it 5 minutes before it expires. The refresh key is valid for 2 weeks. The key gets a new date at each refresh. If the server is off for more than 2 weeks, you must log in again.
 - **Connection loss.** After a healthy connection closes, the program reconnects in 5 seconds. After repeated short connections the wait time doubles up to 60 seconds. BMW limits many connection attempts.
-- **Restart.** The program replays the messages of the last 24 hours. It keeps the odometer and door history. It saves sent notifications in `state.json`. The same notification does not repeat.
+- **Restart.** The program replays the messages of the last 24 hours. It keeps the odometer and door history. It saves sent notifications in `state.json`. The same notification does not repeat. The program skips a broken line in the history.
+- **ntfy is not reachable.** The program does not count the notification as sent. It tries again after 30 seconds. Each next try waits twice as long, up to 10 minutes.
+- **Subscription error.** If the stream refuses the subscription, the program closes the connection and connects again.
 - **Full state in each message.** The car sends all selected attributes in each message. A lost message does not hide a state for long.
 
 ## More events later

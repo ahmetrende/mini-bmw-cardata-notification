@@ -1,8 +1,11 @@
 // Run with: npm test
 // These tests use fake car data. They do not call BMW or ntfy.
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { DEFAULT_CONFIG, Watcher, formatTime, label, turkishFromSuffix } from '../mini_watch.mjs';
+import { DEFAULT_CONFIG, Watcher, checkConfig, checkTopic, formatTime, label, replayRecent, turkishFromSuffix } from '../mini_watch.mjs';
 
 const KM = 'vehicle.vehicle.travelledDistance';
 const TILT = 'vehicle.cabin.sunroof.tiltStatus';
@@ -275,4 +278,152 @@ test('reminders wait longer each time: 60, 120, 240, 480 minutes', async () => {
   );
   assert.match(sent[0][1], /MINI left open/);
   for (const [, text] of sent.slice(1)) assert.match(text, /MINI still open/);
+});
+
+// ---- Failed notifications, unknown values, settings and history (static analysis findings F-01, F-03, F-04, F-06, F-13) ----
+
+// Replaces fetch with a fake ntfy server. `answers` is a list of HTTP status codes or 'throw'. The last answer repeats.
+async function withFakeNtfy(answers, fn) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    const answer = answers[Math.min(calls.length, answers.length - 1)];
+    calls.push(JSON.parse(options.body));
+    if (answer === 'throw') throw new Error('connection refused');
+    return { ok: answer >= 200 && answer < 300, status: answer };
+  };
+  try {
+    await logsDuring(fn);
+  } finally {
+    globalThis.fetch = original;
+  }
+  return calls;
+}
+
+const ntfyConfig = { ...DEFAULT_CONFIG, timezone: 'UTC', alert_after_min: 0, ntfy_topic: 'mini-0123456789abcdef01', ntfy_server: 'https://ntfy.invalid' };
+
+test('a failed notification is sent again later and the state waits for success', async () => {
+  let clock = 1000;
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock });
+  watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
+  const calls = await withFakeNtfy([500, 'throw', 200], async () => {
+    await watcher.check(); // HTTP 500
+    assert.equal(watcher.alerted, false, 'no alert is recorded after a failure');
+    assert.equal(watcher.notified.size, 0);
+    clock += 10;
+    await watcher.check(); // still in the 30 second wait: no try
+    clock += 30;
+    await watcher.check(); // connection error, the next wait is 60 seconds
+    clock += 59;
+    await watcher.check(); // still waiting
+    clock += 2;
+    await watcher.check(); // HTTP 200
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].title, 'MINI left open', 'the retry is the first alert, not a reminder');
+  assert.equal(watcher.alerted, true);
+  assert.equal(watcher.notifyFailures, 0);
+});
+
+test('no "everything is closed" when the alert never reached the phone', async () => {
+  let clock = 1000;
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock });
+  watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
+  const calls = await withFakeNtfy(['throw', 200], async () => {
+    await watcher.check(); // the alert fails
+    watcher.onData(msg({ [WIN]: 'CLOSED' }), clock + 5);
+    clock += 600;
+    await watcher.check(); // everything is closed, but no alert went out
+  });
+  assert.equal(calls.length, 1, 'only the failed alert');
+});
+
+test('"everything is closed" is sent again when it fails', async () => {
+  let clock = 1000;
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock });
+  watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
+  const calls = await withFakeNtfy([200, 503, 200], async () => {
+    await watcher.check(); // alert sent
+    watcher.onData(msg({ [WIN]: 'CLOSED' }), clock + 5);
+    clock += 10;
+    await watcher.check(); // "closed" fails
+    clock += 31;
+    await watcher.check(); // "closed" sent
+    clock += 31;
+    await watcher.check(); // nothing more
+  });
+  assert.deepEqual(calls.map((call) => call.title), ['MINI left open', 'MINI', 'MINI']);
+  assert.equal(watcher.alerted, false);
+});
+
+test('an unknown or empty value does not close an open part', async () => {
+  const watcher = new Watcher(baseConfig);
+  const lines = await logsDuring(async () => {
+    watcher.onData(msg({ [WIN]: 'OPEN' }));
+    watcher.onData(msg({ [WIN]: 'UNKNOWN' }));
+    watcher.onData(msg({ [WIN]: null }));
+    watcher.onData({ [WIN]: {} });
+    watcher.onData(msg({ [WIN]: 'UNKNOWN' })); // a second time: no new log line
+  });
+  assert.equal(watcher.openSince.has(WIN), true);
+  assert.equal(watcher.sawClose, false);
+  assert.equal(lines.filter((line) => line.startsWith('Unknown value')).length, 2, 'one log line for each new value');
+  watcher.onData(msg({ [WIN]: 'CLOSED' }));
+  assert.equal(watcher.openSince.has(WIN), false, 'CLOSED still closes');
+});
+
+test('the door lock status is not an open part', async () => {
+  const watcher = new Watcher(baseConfig);
+  const lines = await logsDuring(async () => {
+    watcher.onData(msg({ 'vehicle.cabin.door.status': 'UNLOCKED' }));
+    watcher.onData(msg({ 'vehicle.cabin.door.status': 'SECURED' }));
+  });
+  assert.equal(watcher.openSince.size, 0);
+  assert.deepEqual(lines, [], 'no "unknown value" log line');
+});
+
+test('checkTopic refuses an empty, example or short topic', () => {
+  for (const topic of ['', 'YOUR-RANDOM-TOPIC-NAME', 'mini-your-long-random-name', 'mini-abc123']) {
+    assert.throws(() => checkTopic({ ntfy_topic: topic }), /ntfy_topic/, topic);
+  }
+  checkTopic({ ntfy_topic: 'mini-3f9a1c7e2b5d8e0a4c' }); // the format from docs/en/03-ntfy.md
+});
+
+test('checkConfig refuses a bad number of minutes', () => {
+  checkConfig({ ...DEFAULT_CONFIG });
+  checkConfig({ ...DEFAULT_CONFIG, alert_after_min: 0 });
+  for (const [key, value] of [
+    ['alert_after_min', -1],
+    ['remind_every_min', 0],
+    ['remind_every_min', '60'],
+    ['park_after_idle_min', Number.NaN],
+    ['remind_max_min', 99999],
+  ]) {
+    assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, [key]: value }), new RegExp(key), `${key}=${value}`);
+  }
+});
+
+test('the history replay skips broken lines and keeps the others', async () => {
+  const clock = 100_000;
+  const line = (t, values) => JSON.stringify({ t, payload: JSON.stringify({ data: msg(values) }) });
+  const file = join(mkdtempSync(join(tmpdir(), 'mini-watch-test-')), 'messages.jsonl');
+  writeFileSync(
+    file,
+    [
+      line(clock - 30 * 3600, { [TILT]: 'OPEN' }), // older than 24 hours: not used
+      line(clock - 3600, { [WIN]: 'OPEN' }),
+      '{"t": 99000, "payload": "{broken',
+      line(clock - 1800, { [KM]: 100 }),
+      '{"t": 99',
+    ].join('\n'),
+  );
+  const watcher = new Watcher(baseConfig, { clock: () => clock });
+  let result;
+  await logsDuring(() => {
+    result = replayRecent(watcher, file);
+  });
+  assert.deepEqual(result, { count: 2, broken: 2 });
+  assert.equal(watcher.openSince.has(WIN), true);
+  assert.equal(watcher.openSince.has(TILT), false);
+  assert.equal(watcher.lastKm, 100);
 });

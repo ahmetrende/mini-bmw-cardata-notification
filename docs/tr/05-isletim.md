@@ -39,7 +39,10 @@ Log satırları her zaman İngilizce yazılır. Yalnızca bildirim metni `langua
 | `Reconnecting in 5 seconds.` | Bağlantı kapandı, program yeniden bağlanıyor. Token yenilemesinden sonra bu satırı her saat görürsün. |
 | `MQTT error: Keepalive timeout` | Ağ kesintisi. Arada bir olması normal. Sık oluyorsa ağı kontrol et. |
 | `Could not refresh the token ...` | Yeniden giriş yapman gerekiyor. Aşağıya bak. |
-| `Notification failed: ...` | ntfy'ye ulaşılamadı. Konu adını ve ağı kontrol et. |
+| `Notification failed: ...` | ntfy'ye ulaşılamadı. Program 30 saniye sonra yeniden dener, sonra her seferinde daha uzun bekler, en çok 10 dakika. Satır tekrar ediyorsa konu adını ve ağı kontrol et. |
+| `Subscribe error: ... Reconnecting.` | Akış aboneliği reddetti. Program yeniden bağlanır. Satır tekrar ediyorsa portalda **CarData Stream** anahtarının açık olduğunu kontrol et. |
+| `Unknown value "..." for ...` | Araç, programın tanımadığı bir değer yolladı. Parça son bilinen durumunda kalır. Lütfen bir issue aç ve bu satırı ekle. |
+| `Set "ntfy_topic" ...` veya `"..." must be a number of minutes ...` | Program başlamadı. `config.json` içindeki bir değer hatalı. Düzelt ve servisi yeniden başlat. |
 
 ## Ayarları değiştir
 
