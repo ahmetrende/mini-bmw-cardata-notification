@@ -6,13 +6,37 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=miniwatch
-WorkingDirectory=/opt/mini-watch
+Group=miniwatch
+# Settings and data are in /var/lib/mini-watch. The program finds the folder in $STATE_DIRECTORY.
+StateDirectory=mini-watch
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/mini-watch
 ExecStart=/usr/local/bin/node /opt/mini-watch/mini_watch.mjs run
 # BMW limits many connection attempts in a short time. After a crash, wait 30 seconds.
 Restart=always
 RestartSec=30
-StandardOutput=append:/opt/mini-watch/run.log
-StandardError=append:/opt/mini-watch/run.log
+# The log goes to the system journal. Read it with: journalctl -u mini-watch
+
+# Limits. The program can write only to /var/lib/mini-watch. New files are private (0600).
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

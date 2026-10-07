@@ -138,7 +138,7 @@ cd mini-bmw-cardata-notification
 sudo bash deploy/install.sh
 ```
 
-Betik Node 22'yi kurar, `miniwatch` kullanıcısını oluşturur, programı `/opt/mini-watch` içine kopyalar ve servisi kurar. İş bitince "Install done." yazar.
+Betik Node 22'yi kurar, `miniwatch` kullanıcısını oluşturur, programı `/opt/mini-watch` içine kopyalar ve servisi kurar. Ayarların ve verilerin `/var/lib/mini-watch` klasöründe durur. Bu klasörü yalnızca `miniwatch` kullanıcısı okuyabilir. Betik ayrıca `mini-watch` komutunu kurar. İş bitince "Install done." yazar.
 
 Saat dilimini ayarlamak isteğe bağlı. Yalnızca log'daki saatleri etkiler:
 
@@ -149,7 +149,7 @@ sudo timedatectl set-timezone Europe/Istanbul
 Ayarları düzenle:
 
 ```bash
-sudo nano /opt/mini-watch/config.json
+sudo nano /var/lib/mini-watch/config.json
 ```
 
 `client_id` ve `ntfy_topic` değerlerini kendi değerlerinle değiştir. Program örnek konu adıyla veya 16 karakterden kısa bir adla başlamaz. `language` alanını `en` veya `tr` yap. `timezone` alanına kendi saat dilimini yaz, örneğin `Europe/Istanbul`. Bildirimlerdeki saatler bu ayara göre yazılır. Kaydetmek için `Ctrl+O`, `Enter`, `Ctrl+X` tuşlarına bas.
@@ -161,7 +161,7 @@ sudo nano /opt/mini-watch/config.json
 Sunucuda şunu çalıştır:
 
 ```bash
-sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs login
+sudo mini-watch login
 ```
 
 Çıktı şuna benzer:
@@ -183,7 +183,7 @@ Kod 5 dakika geçerli. Süresi dolarsa komutu yeniden çalıştır.
 
 ```bash
 sudo systemctl enable --now mini-watch
-sudo tail -f /opt/mini-watch/run.log
+sudo journalctl -u mini-watch -f
 ```
 
 Log'da şu satırlar çıkmalı:
@@ -199,7 +199,7 @@ Log izlemeyi bitirmek için `Ctrl+C` tuşlarına bas. Servis çalışmaya devam 
 Telefonuna bir deneme bildirimi yolla:
 
 ```bash
-sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs ntfy-test
+sudo mini-watch ntfy-test
 ```
 
 "MINI deneme: Bildirim çalışıyor." bildirimi gelmeli. (`language` değeri `en` ise metin "MINI test: Notifications work." olur.)

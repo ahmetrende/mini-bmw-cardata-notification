@@ -13,17 +13,17 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
 | Task | Command |
 |---|---|
 | Status | `systemctl status mini-watch --no-pager` |
-| Live log | `sudo tail -f /opt/mini-watch/run.log` |
-| Log without message lines | `sudo grep -v "Message:" /opt/mini-watch/run.log \| tail -30` |
-| Sent notifications | `sudo grep "Notification" /opt/mini-watch/run.log \| tail -20` |
+| Live log | `sudo journalctl -u mini-watch -f` |
+| Log without message lines | `sudo journalctl -u mini-watch -n 500 --no-pager \| grep -v "Message:" \| tail -30` |
+| Sent notifications | `sudo journalctl -u mini-watch --no-pager \| grep "Notification" \| tail -20` |
 | Restart | `sudo systemctl restart mini-watch` |
 | Stop | `sudo systemctl stop mini-watch` |
-| Test notification | `sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs ntfy-test` |
+| Test notification | `sudo mini-watch ntfy-test` |
 
 To watch the log from your computer with one command:
 
 ```bash
-gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --command='sudo tail -f /opt/mini-watch/run.log'
+gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --command='sudo journalctl -u mini-watch -f'
 ```
 
 ## Log lines
@@ -45,7 +45,7 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 ## Change a setting
 
 ```bash
-sudo nano /opt/mini-watch/config.json
+sudo nano /var/lib/mini-watch/config.json
 sudo systemctl restart mini-watch
 ```
 
@@ -70,7 +70,7 @@ git pull
 sudo bash deploy/install.sh
 ```
 
-The script does not change `config.json` or `tokens.json`. It restarts the service if the service runs.
+The script does not change `config.json` or `tokens.json`. It restarts the service if the service runs. An older install kept the data in `/opt/mini-watch`. The script moves the data to `/var/lib/mini-watch` one time. The old `run.log` becomes `/var/lib/mini-watch/run-before-journal.log`.
 
 ## Log in again
 
@@ -82,7 +82,7 @@ You must log in again in these cases:
 
 ```bash
 sudo systemctl stop mini-watch
-sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs login
+sudo mini-watch login
 sudo systemctl start mini-watch
 ```
 
@@ -113,12 +113,11 @@ Do not use the **Reset** button in the console. Do not use `gcloud compute insta
 
 ## Disk use
 
-`run.log` and `messages.jsonl` grow all the time. They use a few MB each day. A 30 GB disk lasts for years. To clean them:
+The system journal limits the size of the log. `messages.jsonl` grows all the time. It uses a few MB each day. A 30 GB disk lasts for years. To make it smaller:
 
 ```bash
 sudo systemctl stop mini-watch
-sudo truncate -s 0 /opt/mini-watch/run.log
-sudo -u miniwatch sh -c 'tail -n 5000 /opt/mini-watch/messages.jsonl > /tmp/m && mv /tmp/m /opt/mini-watch/messages.jsonl'
+sudo -u miniwatch sh -c 'cd /var/lib/mini-watch && umask 077 && tail -n 5000 messages.jsonl > m.tmp && mv m.tmp messages.jsonl'
 sudo systemctl start mini-watch
 ```
 

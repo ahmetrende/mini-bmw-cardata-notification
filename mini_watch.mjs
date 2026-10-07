@@ -12,10 +12,13 @@ import { fileURLToPath } from 'node:url';
 import mqtt from 'mqtt';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CONFIG = join(HERE, 'config.json');
-const TOKENS = join(HERE, 'tokens.json');
-const MESSAGES = join(HERE, 'messages.jsonl');
-const STATE = join(HERE, 'state.json'); // Notification state. A restart must not repeat an alert.
+// Settings and data. The systemd service sets STATE_DIRECTORY (/var/lib/mini-watch).
+// The "mini-watch" command sets MINI_WATCH_DATA. Without both, the files are next to this program.
+const DATA_DIR = process.env.MINI_WATCH_DATA || process.env.STATE_DIRECTORY || HERE;
+const CONFIG = join(DATA_DIR, 'config.json');
+const TOKENS = join(DATA_DIR, 'tokens.json');
+const MESSAGES = join(DATA_DIR, 'messages.jsonl');
+const STATE = join(DATA_DIR, 'state.json'); // Notification state. A restart must not repeat an alert.
 
 const OAUTH = 'https://customer.bmwgroup.com/gcdm/oauth';
 const SCOPE = 'authenticate_user openid cardata:streaming:read cardata:api:read';
@@ -181,7 +184,7 @@ function loadConfig() {
 
 function requireClientId(cfg) {
   if (!cfg.client_id || String(cfg.client_id).startsWith('YOUR-')) {
-    throw new Error('Set "client_id" in config.json first. Use the Client ID from the MINI portal.');
+    throw new Error(`Set "client_id" in ${CONFIG} first. Use the Client ID from the MINI portal.`);
   }
 }
 
@@ -585,7 +588,7 @@ async function run(cfg) {
     });
     client.on('message', (_topic, payload) => {
       const raw = payload.toString();
-      appendFileSync(MESSAGES, `${JSON.stringify({ t: now(), payload: raw })}\n`);
+      appendFileSync(MESSAGES, `${JSON.stringify({ t: now(), payload: raw })}\n`, { mode: 0o600 });
       let data;
       try {
         data = JSON.parse(raw).data ?? {};
@@ -625,7 +628,7 @@ async function main() {
     if (command === 'login' || command === 'run') requireClientId(cfg);
     if (command === 'run' || command === 'ntfy-test') checkTopic(cfg);
     if (command === 'run' && !existsSync(TOKENS)) {
-      throw new Error('tokens.json not found. Run the "login" command first (docs/en/04-server-setup.md, part 7).');
+      throw new Error(`${TOKENS} not found. Run the "login" command first (docs/en/04-server-setup.md, part 7).`);
     }
     if (command === 'login') await login(cfg);
     else if (command === 'run') await run(cfg);

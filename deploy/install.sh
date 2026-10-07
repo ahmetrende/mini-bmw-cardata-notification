@@ -2,11 +2,15 @@
 # Installs or updates the program on an Ubuntu server.
 # Run from the repository root: sudo bash deploy/install.sh
 # What it does: installs Node 22 (with a checksum check), creates the miniwatch user,
-# copies the code to /opt/mini-watch, installs the dependencies and installs the systemd service.
+# copies the code to /opt/mini-watch (owned by root, read-only for the service),
+# installs the dependencies, the "mini-watch" command and the systemd service.
+# Settings and data stay in /var/lib/mini-watch. Only the miniwatch user can read them.
 # It does not change config.json or tokens.json. It restarts the service if the service runs.
+# Older versions kept the data in /opt/mini-watch. The script moves that data to /var/lib/mini-watch.
 set -euo pipefail
 
 APP=/opt/mini-watch
+DATA=/var/lib/mini-watch
 NODE_MAJOR=22
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -42,22 +46,54 @@ if [ ! -x "$NODE" ] || [ "$(node_major)" -lt "$NODE_MAJOR" ]; then
 fi
 echo "Node: $("$NODE" -v), OpenSSL: $("$NODE" -p process.versions.openssl)"
 
-id miniwatch >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin miniwatch
-install -d -o miniwatch -g miniwatch "$APP"
-install -o miniwatch -g miniwatch -m 644 "$REPO/mini_watch.mjs" "$REPO/package.json" "$REPO/package-lock.json" "$APP/"
+id miniwatch >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbin/nologin miniwatch
+WAS_ACTIVE=0
+systemctl is-active --quiet mini-watch && WAS_ACTIVE=1
 
-if [ ! -f "$APP/config.json" ]; then
-  install -o miniwatch -g miniwatch -m 600 "$REPO/config.example.json" "$APP/config.json"
+# Settings and data: only the miniwatch user can read them.
+install -d -o miniwatch -g miniwatch -m 700 "$DATA"
+OLD_DATA=0
+for f in config.json tokens.json state.json messages.jsonl run.log; do
+  [ -f "$APP/$f" ] && OLD_DATA=1
+done
+if [ "$OLD_DATA" = 1 ]; then
+  systemctl stop mini-watch 2>/dev/null || true # The old program writes these files.
+  for f in config.json tokens.json state.json messages.jsonl; do
+    if [ -f "$APP/$f" ]; then
+      if [ -e "$DATA/$f" ]; then
+        echo "Both $APP/$f and $DATA/$f exist. The script keeps $DATA/$f." >&2
+        mv "$APP/$f" "$DATA/$f.old"
+      else
+        mv "$APP/$f" "$DATA/$f"
+      fi
+    fi
+  done
+  # The log now goes to the system journal. Keep the old log file.
+  [ -f "$APP/run.log" ] && mv "$APP/run.log" "$DATA/run-before-journal.log"
+  echo "Moved the data from $APP to $DATA."
+fi
+if [ ! -f "$DATA/config.json" ]; then
+  install -m 600 "$REPO/config.example.json" "$DATA/config.json"
   NEW_CONFIG=1
 fi
+chown -R miniwatch:miniwatch "$DATA"
+chmod -R u+rwX,go-rwx "$DATA"
 
-(cd "$APP" && sudo -u miniwatch HOME="$APP" PATH="/usr/local/bin:/usr/bin:/bin" "$NPM" ci --omit=dev --silent)
+# Code: owned by root. The service can read it but cannot change it.
+install -d -o root -g root -m 755 "$APP"
+rm -rf "$APP/.npm"
+install -o root -g root -m 644 "$REPO/mini_watch.mjs" "$REPO/package.json" "$REPO/package-lock.json" "$APP/"
+# --ignore-scripts: no code from the packages runs during the install. The packages need no install scripts.
+(cd "$APP" && HOME=/root PATH="/usr/local/bin:/usr/bin:/bin" "$NPM" ci --omit=dev --ignore-scripts --silent)
+chown -R root:root "$APP"
+chmod -R u+rwX,go+rX,go-w "$APP"
 
+install -o root -g root -m 755 "$REPO/deploy/mini-watch" /usr/local/bin/mini-watch
 install -o root -g root -m 644 "$REPO/deploy/mini-watch.service" /etc/systemd/system/mini-watch.service
 systemctl daemon-reload
 sync # Write the new files to disk. A sudden shutdown must not leave empty files.
 
-if systemctl is-active --quiet mini-watch; then
+if [ "$WAS_ACTIVE" = 1 ]; then
   systemctl restart mini-watch
   echo "The service restarted."
 fi
@@ -65,7 +101,7 @@ fi
 echo
 echo "Install done."
 if [ "${NEW_CONFIG:-0}" = 1 ]; then
-  echo "Next step: sudo nano $APP/config.json  (set client_id, ntfy_topic and language)"
-elif [ ! -f "$APP/tokens.json" ]; then
-  echo "Next step: log in. See docs/en/04-server-setup.md, part 7."
+  echo "Next step: sudo nano $DATA/config.json  (set client_id, ntfy_topic, language and timezone)"
+elif [ ! -f "$DATA/tokens.json" ]; then
+  echo "Next step: log in with: sudo mini-watch login  (docs/en/04-server-setup.md, part 7)"
 fi

@@ -3,7 +3,8 @@
 // It sends nothing. It prints the notifications that the program would send.
 // Use it before you restart a running server, or to check a change of the logic.
 //
-//   node tools/replay.mjs /opt/mini-watch/messages.jsonl [config.json] [--hours 24]
+//   node tools/replay.mjs messages.jsonl [config.json] [--hours 24]
+// On the server the file is /var/lib/mini-watch/messages.jsonl. Copy it to another computer first.
 import { readFileSync } from 'node:fs';
 import { DEFAULT_CONFIG, Watcher, formatTime } from '../mini_watch.mjs';
 

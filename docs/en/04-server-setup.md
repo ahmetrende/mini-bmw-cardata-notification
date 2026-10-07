@@ -138,7 +138,7 @@ cd mini-bmw-cardata-notification
 sudo bash deploy/install.sh
 ```
 
-The script installs Node 22, creates the `miniwatch` user, copies the program to `/opt/mini-watch` and installs the service. At the end it shows "Install done."
+The script installs Node 22, creates the `miniwatch` user, copies the program to `/opt/mini-watch` and installs the service. Your settings and data go to `/var/lib/mini-watch`. Only the `miniwatch` user can read that folder. The script also installs the `mini-watch` command. At the end it shows "Install done."
 
 The time zone is optional. It changes only the times in the log:
 
@@ -149,7 +149,7 @@ sudo timedatectl set-timezone Europe/Istanbul
 Edit the settings:
 
 ```bash
-sudo nano /opt/mini-watch/config.json
+sudo nano /var/lib/mini-watch/config.json
 ```
 
 Replace `client_id` and `ntfy_topic` with your values. The program does not start with the example topic name or with a name shorter than 16 characters. Set `language` to `en` or `tr`. Set `timezone` to your own time zone, for example `Europe/London`. The times in the notifications use this setting. Save: `Ctrl+O`, `Enter`, `Ctrl+X`.
@@ -161,7 +161,7 @@ Replace `client_id` and `ntfy_topic` with your values. The program does not star
 On the server, run:
 
 ```bash
-sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs login
+sudo mini-watch login
 ```
 
 The output looks like this:
@@ -183,7 +183,7 @@ The code is valid for 5 minutes. If it expires, run the command again.
 
 ```bash
 sudo systemctl enable --now mini-watch
-sudo tail -f /opt/mini-watch/run.log
+sudo journalctl -u mini-watch -f
 ```
 
 The log must show these lines:
@@ -199,7 +199,7 @@ Press `Ctrl+C` to stop the log view. The service keeps running.
 Send a test notification to your phone:
 
 ```bash
-sudo -u miniwatch /usr/local/bin/node /opt/mini-watch/mini_watch.mjs ntfy-test
+sudo mini-watch ntfy-test
 ```
 
 The notification "MINI test: Notifications work." must arrive.

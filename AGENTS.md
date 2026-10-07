@@ -52,6 +52,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **macOS system Python cannot connect to the stream.** The broker needs TLS 1.3. This project uses Node 22 or newer.
 - **A restart can send a wrong notification.** After a restart, an empty list of open parts can mean "no data yet". The program handles this. Still, before you restart a running server, do a dry run (see below).
 - **The car sends data only when something changes.** An asleep car sends nothing. A remote light signal or an open and close of a door wakes the data.
+- **Server paths.** The code is in `/opt/mini-watch` and belongs to root. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. Use `sudo mini-watch login` and `sudo mini-watch ntfy-test`. Do not start a second copy with `run`.
 - **The tested car (MINI Countryman E, U25) sends no ignition, motion, speed or door lock data.** Do not promise these features. Another car can differ.
 
 ## Change the code
@@ -78,7 +79,7 @@ node tools/replay.mjs messages.jsonl config.json --hours 24
 
 The tool replays the saved messages with a virtual clock and prints each notification with its time. Check that the output matches what the person expects. Only then restart the service.
 
-The free e2-micro server has a small CPU. Copy `messages.jsonl` to another computer and run the replay there. Do not run a long replay on the live server. A busy server can stop the SSH connection.
+The free e2-micro server has a small CPU. Copy `/var/lib/mini-watch/messages.jsonl` to another computer (`sudo cat` over SSH) and run the replay there. The file contains the VIN. Delete the copy when you are done. Do not run a long replay on the live server. A busy server can stop the SSH connection.
 
 ## Short summary in Turkish
 
