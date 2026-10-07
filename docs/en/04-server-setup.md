@@ -213,7 +213,7 @@ The car sends data only when something changes. To start the first message, do o
 
 After 1 or 2 minutes, the log shows lines `Message: vehicle.cabin...`.
 
-Real test: open a window halfway. Drive a short way. Park and leave the car. A notification "MINI left open: ..." must arrive in about 3 minutes.
+Real test: open a window halfway. Drive a short way. Park and leave the car. A notification "MINI left open: ..." must arrive in about 10 minutes.
 
 ## Done
 

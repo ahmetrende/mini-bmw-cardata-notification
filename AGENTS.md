@@ -70,7 +70,15 @@ Only the placeholder values may appear in the result.
 
 ## Dry run before you restart or update a running server
 
-A dry run shows which notification the program would send. It sends nothing. Replay the saved messages through the `Watcher` class with `ntfy_topic` empty. The program then writes the text to the log instead of ntfy. Check that the output matches what the person expects. Only then restart the service.
+A dry run shows which notifications the program would send. It sends nothing. Use `tools/replay.mjs`:
+
+```bash
+node tools/replay.mjs messages.jsonl config.json --hours 24
+```
+
+The tool replays the saved messages with a virtual clock and prints each notification with its time. Check that the output matches what the person expects. Only then restart the service.
+
+The free e2-micro server has a small CPU. Copy `messages.jsonl` to another computer and run the replay there. Do not run a long replay on the live server. A busy server can stop the SSH connection.
 
 ## Short summary in Turkish
 
@@ -82,5 +90,5 @@ Bu dosya, projeyi kurmaya yardım eden bir yapay zekâ aracı içindir. Kurulum 
 - Güvenlik duvarındaki genel kuralları, IAP tünelini denemeden silme.
 - Sunucuyu sert sıfırlama. `sudo systemctl reboot` kullan.
 - Aynı MINI hesabıyla programı iki yerde çalıştırma.
-- Çalışan sunucuyu yeniden başlatmadan önce, hangi bildirimi yollayacağını bir denemeyle gör.
+- Çalışan sunucuyu yeniden başlatmadan önce `tools/replay.mjs` ile hangi bildirimlerin gideceğini gör. Bunu sunucuda değil, başka bir bilgisayarda yap.
 - Ülke adını "Türkiye" yaz.

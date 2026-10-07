@@ -50,9 +50,10 @@ sudo systemctl restart mini-watch
 |---|---|---|
 | `language` | `en` | Language of the notification text: `en` or `tr` |
 | `timezone` | server time zone | Time zone of the times in the notification. Example: `Europe/Istanbul` |
-| `alert_after_min` | 3 | Wait time after parking, before a notification |
-| `remind_every_min` | 60 | Reminder time when a part is still open |
-| `park_after_idle_min` | 10 | The car counts as parked when the odometer is still for this time |
+| `alert_after_min` | 10 | Wait time after the last driver door opening, before a notification |
+| `remind_every_min` | 60 | First reminder time when a part is still open. Each next reminder waits twice as long. |
+| `remind_max_min` | 480 | Longest time between two reminders |
+| `park_after_idle_min` | 30 | The car counts as parked when the odometer is still for this time |
 | `ntfy_server` | `https://ntfy.sh` | The address of your own ntfy server |
 
 ## Update the program

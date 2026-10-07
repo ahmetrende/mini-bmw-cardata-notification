@@ -213,7 +213,7 @@ Araç, yalnızca bir şey değişince veri yollar. İlk mesajı tetiklemek için
 
 1 veya 2 dakika sonra log'da `Message: vehicle.cabin...` satırları çıkar.
 
-Gerçek test: Bir camı yarım aç. Kısa bir yol git. Park et ve araçtan in. Yaklaşık 3 dakika içinde "MINI açık kaldı: ..." bildirimi düşmeli.
+Gerçek test: Bir camı yarım aç. Kısa bir yol git. Park et ve araçtan in. Yaklaşık 10 dakika içinde "MINI açık kaldı: ..." bildirimi düşmeli.
 
 ## Bitti
 

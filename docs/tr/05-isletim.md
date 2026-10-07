@@ -52,9 +52,10 @@ sudo systemctl restart mini-watch
 |---|---|---|
 | `language` | `en` | Bildirim metninin dili: `en` veya `tr` |
 | `timezone` | sunucunun saat dilimi | Bildirimdeki saatlerin saat dilimi. Örnek: `Europe/Istanbul` |
-| `alert_after_min` | 3 | Park ettikten sonra bildirimden önceki bekleme |
-| `remind_every_min` | 60 | Parça hâlâ açıksa hatırlatma aralığı |
-| `park_after_idle_min` | 10 | Kilometre bu kadar durursa araç park sayılır |
+| `alert_after_min` | 10 | Sürücü kapısı son açıldıktan sonra bildirimden önceki bekleme |
+| `remind_every_min` | 60 | Parça hâlâ açıksa ilk hatırlatma süresi. Sonraki her hatırlatma iki kat bekler. |
+| `remind_max_min` | 480 | İki hatırlatma arasındaki en uzun süre |
+| `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |
 | `ntfy_server` | `https://ntfy.sh` | Kendi ntfy sunucunun adresi |
 
 ## Programı güncelle

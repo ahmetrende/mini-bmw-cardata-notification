@@ -2,7 +2,7 @@
 // These tests use fake car data. They do not call BMW or ntfy.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Watcher, formatTime, label, turkishFromSuffix } from '../mini_watch.mjs';
+import { DEFAULT_CONFIG, Watcher, formatTime, label, turkishFromSuffix } from '../mini_watch.mjs';
 
 const KM = 'vehicle.vehicle.travelledDistance';
 const TILT = 'vehicle.cabin.sunroof.tiltStatus';
@@ -14,7 +14,7 @@ const msg = (values) => Object.fromEntries(Object.entries(values).map(([key, val
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Short times so the tests run fast. ntfy_topic is empty, so a notification goes to the log.
-const baseConfig = { language: 'en', timezone: 'UTC', alert_after_min: 0.002, remind_every_min: 30, park_after_idle_min: 0.005, ntfy_topic: '' };
+const baseConfig = { ...DEFAULT_CONFIG, language: 'en', timezone: 'UTC', alert_after_min: 0.002, remind_every_min: 30, park_after_idle_min: 0.005, ntfy_topic: '' };
 
 async function logsDuring(fn) {
   const lines = [];
@@ -173,4 +173,106 @@ test('Turkish time suffix follows the last spoken word', () => {
   };
   for (const [time, suffix] of Object.entries(cases)) assert.equal(turkishFromSuffix(time), suffix, time);
   assert.equal(turkishFromSuffix('6 Eki 13:50'), 'den', 'a date before the time does not matter');
+});
+
+// ---- Scenarios from real drives, with a virtual clock. Times are in minutes. ----
+// The default config applies: wait 10 minutes after parking, idle limit 30 minutes, reminders 60 to 480 minutes.
+
+const DOOR_OPEN = { [DRIVER_DOOR]: true };
+const DOOR_CLOSED = { [DRIVER_DOOR]: false };
+
+// Runs the watcher from minute `from` to minute `to`. `events` is a list of [minute, values].
+// Returns the notifications as [minute, text].
+async function simulate(events, from, to, cfg = {}) {
+  let clock = 0;
+  const watcher = new Watcher({ ...DEFAULT_CONFIG, timezone: 'UTC', ...cfg }, { clock: () => clock });
+  const sent = [];
+  const original = console.log;
+  console.log = (...args) => sent.push([Math.round((clock / 60) * 4) / 4, args.slice(1).join(' ')]);
+  try {
+    const queue = [...events].sort((a, b) => a[0] - b[0]);
+    for (let minute = from; minute <= to; minute += 0.25) {
+      clock = minute * 60;
+      while (queue.length && queue[0][0] <= minute) {
+        const [at, values] = queue.shift();
+        watcher.onData(msg(values), at * 60);
+      }
+      await watcher.check();
+    }
+  } finally {
+    console.log = original;
+  }
+  return sent;
+}
+
+// The odometer value at each minute of a drive: +1 every 3 minutes.
+const drive = (fromMinute, toMinute, startKm) => {
+  const events = [];
+  for (let m = fromMinute, km = startKm; m <= toMinute; m += 3, km += 1) events.push([m, { [KM]: km }]);
+  return events;
+};
+
+test('trip start: a part that opens before the first odometer value sends nothing', async () => {
+  // Earlier park: last km at minute 0, driver left at minute 1. The driver gets in at minute 100.
+  // The sunroof tilts at minute 100.5. The first new odometer value comes at minute 104.
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.1, DOOR_CLOSED],
+    [100, DOOR_OPEN],
+    [100.1, DOOR_CLOSED],
+    [100.5, { [TILT]: 'OPEN' }],
+    ...drive(104, 130, 101),
+  ];
+  assert.deepEqual(await simulate(events, 99, 130), []);
+});
+
+test('traffic jam: the odometer stops for 13 minutes, no notification', async () => {
+  const events = [
+    [0, { [KM]: 100, [WIN]: 'OPEN' }],
+    [0.5, DOOR_OPEN],
+    [0.6, DOOR_CLOSED],
+    ...drive(4, 10, 101), // km 101 to 103
+    ...drive(23, 40, 104), // 13 minutes without a new value, then the drive goes on
+  ];
+  assert.deepEqual(await simulate(events, 0, 40), []);
+});
+
+test('sitting in the car: window opened and closed before leaving, no notification', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [10, DOOR_OPEN],
+    [10.1, DOOR_CLOSED],
+    [11, { [WIN]: 'OPEN' }],
+    [15, DOOR_OPEN], // the driver leaves
+    [15.2, DOOR_CLOSED],
+    [16, { [WIN]: 'CLOSED' }],
+  ];
+  assert.deepEqual(await simulate(events, 0, 60), []);
+});
+
+test('real park: one notification 10 minutes after the driver door opens', async () => {
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }],
+    [0.5, DOOR_OPEN],
+    [0.6, DOOR_CLOSED],
+    ...drive(4, 22, 101),
+    [23, DOOR_OPEN], // park and leave
+    [23.2, DOOR_CLOSED],
+  ];
+  const sent = await simulate(events, 0, 60);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 33);
+  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
+});
+
+test('reminders wait longer each time: 60, 120, 240, 480 minutes', async () => {
+  const events = [[0, { [KM]: 100, [TILT]: 'OPEN' }], [1, DOOR_OPEN], [1.1, DOOR_CLOSED]];
+  const sent = await simulate(events, 0, 16 * 60);
+  assert.deepEqual(
+    sent.map(([minute]) => minute),
+    [11, 71, 191, 431, 911],
+  );
+  assert.match(sent[0][1], /MINI left open/);
+  for (const [, text] of sent.slice(1)) assert.match(text, /MINI still open/);
 });

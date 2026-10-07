@@ -110,17 +110,19 @@ const log = (msg) => console.log(new Date().toTimeString().slice(0, 8), msg);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const now = () => Date.now() / 1000;
 
+export const DEFAULT_CONFIG = {
+  language: 'en',
+  timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
+  alert_after_min: 10,
+  remind_every_min: 60,
+  remind_max_min: 480,
+  park_after_idle_min: 30,
+  ntfy_server: 'https://ntfy.sh',
+  ntfy_topic: '',
+};
+
 function loadConfig() {
-  const cfg = {
-    language: 'en',
-    timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
-    alert_after_min: 3,
-    remind_every_min: 60,
-    park_after_idle_min: 10,
-    ntfy_server: 'https://ntfy.sh',
-    ntfy_topic: '',
-    ...JSON.parse(readFileSync(CONFIG, 'utf8')),
-  };
+  const cfg = { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(CONFIG, 'utf8')) };
   if (!TEXT[cfg.language]) throw new Error(`Unknown language "${cfg.language}". Use "en" or "tr".`);
   try {
     new Intl.DateTimeFormat('en-GB', { timeZone: cfg.timezone || undefined });
@@ -262,37 +264,47 @@ const parseBool = (value) => {
 };
 
 export class Watcher {
-  constructor(cfg, { persist = false } = {}) {
+  // clock: a function that returns the current time in seconds. Tests and replays pass their own clock.
+  constructor(cfg, { persist = false, clock = now } = {}) {
     this.cfg = cfg;
     this.persist = persist; // Tests do not write to disk.
+    this.clock = clock;
     this.openSince = new Map(); // attribute -> time it was first seen open
     this.notified = new Set();
     this.alerted = false; // Did at least one "left open" notification go out?
     this.sawClose = false; // Did the program see a part close? Missing data does not count as closed.
     this.lastNotify = 0;
+    this.reminders = 0; // reminders sent since the last "left open" notification
     this.ignition = null; // true / false / null (unknown)
     this.moving = null;
     this.parkedSince = null; // time the car was first known to be parked
     this.drivingSeen = 0; // time of the last driving signal
     this.lastKm = null;
     this.kmChangedAt = 0; // time the odometer last increased
-    this.driverExitAt = null; // first driver door opening after the odometer increased
+    this.lastDriverDoorAt = 0; // time the driver door last opened (to get in or to get out)
   }
 
   // Some cars (the tested Countryman E, U25) send no ignition or motion data.
-  // The odometer rises about every kilometre while driving. So the rule is:
-  // driving = the odometer rose in the last N minutes AND the driver door has not opened since.
+  // The car sends the odometer about every 3 minutes while it moves, in whole kilometres.
+  // driving = the odometer rose after the last driver door opening, and in the last park_after_idle_min.
+  // The idle limit is long (30 minutes) because a traffic jam can stop the odometer for more than 10 minutes.
   // Ignition and motion data are used too when the car sends them. They count as stale after 2 hours.
   isDriving() {
     const ignitionDriving = this.ignition === true || this.moving === true;
-    if (ignitionDriving && now() - this.drivingSeen < DRIVING_STALE_S) return true;
+    if (ignitionDriving && this.clock() - this.drivingSeen < DRIVING_STALE_S) return true;
     const idleLimit = this.cfg.park_after_idle_min * 60;
-    return this.kmChangedAt > 0 && this.driverExitAt === null && now() - this.kmChangedAt < idleLimit;
+    return this.kmChangedAt > this.lastDriverDoorAt && this.clock() - this.kmChangedAt < idleLimit;
   }
 
   saveState() {
     if (!this.persist) return;
-    const state = { notified: [...this.notified], lastNotify: this.lastNotify, alerted: this.alerted, savedAt: now() };
+    const state = {
+      notified: [...this.notified],
+      lastNotify: this.lastNotify,
+      reminders: this.reminders,
+      alerted: this.alerted,
+      savedAt: this.clock(),
+    };
     writeFileSync(STATE, JSON.stringify(state));
   }
 
@@ -300,9 +312,10 @@ export class Watcher {
   loadState() {
     try {
       const state = JSON.parse(readFileSync(STATE, 'utf8'));
-      if (state.savedAt < this.kmChangedAt || now() - state.savedAt > 2 * 3600) return false;
+      if (state.savedAt < this.kmChangedAt || this.clock() - state.savedAt > 2 * 3600) return false;
       this.notified = new Set(state.notified);
       this.lastNotify = state.lastNotify;
+      this.reminders = state.reminders ?? 0;
       this.alerted = state.alerted;
       return true;
     } catch {
@@ -310,13 +323,15 @@ export class Watcher {
     }
   }
 
-  // The wait time starts here: the driver door opened (the driver left) or the last odometer increase.
+  // The wait time starts at the later of: the last driver door opening, the last odometer increase.
+  // The driver door also opens when the driver gets in. The car sends the first odometer value
+  // 3 to 7 minutes after that. So the wait (alert_after_min, 10 minutes) must be longer than that.
   parkStart() {
-    return Math.max(this.parkedSince ?? 0, this.driverExitAt ?? this.kmChangedAt);
+    return Math.max(this.parkedSince ?? 0, this.lastDriverDoorAt, this.kmChangedAt);
   }
 
   // "at" is the time of the message. A replay at startup passes the original time.
-  onData(data, at = now()) {
+  onData(data, at = this.clock()) {
     for (const [name, item] of Object.entries(data)) {
       if (name === IGNITION) this.ignition = parseBool(item?.value);
       else if (name === MOVING) this.moving = parseBool(item?.value);
@@ -325,14 +340,14 @@ export class Watcher {
         if (Number.isFinite(km)) {
           if (this.lastKm !== null && km > this.lastKm) {
             this.kmChangedAt = at;
-            this.driverExitAt = null;
             this.notified = new Set(); // A new park, a new notification.
             this.alerted = false;
+            this.reminders = 0;
           }
           this.lastKm = km;
         }
       } else if (name === DRIVER_DOOR && parseBool(item?.value) === true) {
-        if (this.kmChangedAt > 0 && this.driverExitAt === null) this.driverExitAt = at;
+        this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
       }
       if (!WATCHED.some((prefix) => name.startsWith(prefix)) || name.endsWith('.position')) continue;
       const value = String(item?.value ?? '').toUpperCase();
@@ -357,7 +372,7 @@ export class Watcher {
     // The timer starts when the part opened or when the car parked, whichever is later.
     const current = new Set(
       [...this.openSince]
-        .filter(([, since]) => now() - Math.max(since, this.parkStart()) >= wait)
+        .filter(([, since]) => this.clock() - Math.max(since, this.parkStart()) >= wait)
         .map(([name]) => name),
     );
     this.notified = new Set([...this.notified].filter((name) => this.openSince.has(name))); // Forget closed parts.
@@ -375,17 +390,20 @@ export class Watcher {
     if (current.size === 0) return; // A part is open but the wait time is not over.
     this.alerted = true;
     this.sawClose = false;
-    // The oldest open part comes first. Each part shows the time the program first saw it open.
-    const items = [...current]
-      .sort((a, b) => this.openSince.get(a) - this.openSince.get(b))
-      .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(this.openSince.get(name), this.cfg))}`)
-      .join(', ');
     const added = [...current].some((name) => !this.notified.has(name));
-    const remind = now() - this.lastNotify >= this.cfg.remind_every_min * 60;
+    // Each reminder waits twice as long as the one before: 60, 120, 240 minutes, up to remind_max_min.
+    const interval = Math.min(this.cfg.remind_every_min * 2 ** this.reminders, this.cfg.remind_max_min) * 60;
+    const remind = this.clock() - this.lastNotify >= interval;
     if (added || remind) {
+      // The oldest open part comes first. Each part shows the time the program first saw it open.
+      const items = [...current]
+        .sort((a, b) => this.openSince.get(a) - this.openSince.get(b))
+        .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(this.openSince.get(name), this.cfg))}`)
+        .join(', ');
       await ntfy(this.cfg, added ? t.openTitle : t.stillOpenTitle, t.openBody(items));
+      this.reminders = added ? 0 : this.reminders + 1;
       this.notified = current;
-      this.lastNotify = now();
+      this.lastNotify = this.clock();
       this.saveState();
     }
   }

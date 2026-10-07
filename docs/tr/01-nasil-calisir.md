@@ -33,10 +33,10 @@ Test edilen araç kontak, hareket ve hız verisi yollamıyor. Program, aracın y
 
 | Durum | Programın kararı |
 |---|---|
-| Kilometre son 10 dakikada arttı | Araç yolda. Bildirim yok. |
+| Kilometre, sürücü kapısı son açıldıktan sonra ve son 30 dakika içinde arttı | Araç yolda. Bildirim yok. |
 | Kilometre arttı, ardından sürücü kapısı açıldı | Sürücü indi. Park başladı. |
-| Kilometre 10 dakikadır artmıyor | Araç park halinde. |
-| Programda hiç kilometre verisi yok | Bir parça 3 dakikadır açıksa bildirim düşer. |
+| Kilometre 30 dakikadır artmıyor | Araç park halinde. Trafik sıkışıklığında kilometre 10 dakikadan uzun durabilir. |
+| Programda hiç kilometre verisi yok | Bir parça 10 dakikadır açıksa bildirim düşer. |
 
 Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır.
 
@@ -44,12 +44,15 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 
 | Kural | Varsayılan | `config.json` ayarı |
 |---|---|---|
-| Park ettikten sonra bekleme süresi | 3 dakika | `alert_after_min` |
-| Parça hâlâ açıksa hatırlatma | 60 dakika | `remind_every_min` |
-| Kilometre bu kadar durursa araç park sayılır | 10 dakika | `park_after_idle_min` |
+| Sürücü kapısı son açıldıktan sonraki bekleme | 10 dakika | `alert_after_min` |
+| Parça hâlâ açıksa ilk hatırlatma | 60 dakika | `remind_every_min` |
+| İki hatırlatma arasındaki en uzun süre | 480 dakika (8 saat) | `remind_max_min` |
+| Kilometre bu kadar durursa araç park sayılır | 30 dakika | `park_after_idle_min` |
 | Bildirim metninin dili | `en` | `language` (`en` veya `tr`) |
 | Bildirimdeki saatlerin saat dilimi | sunucunun saat dilimi | `timezone` (örnek: `Europe/Istanbul`) |
 
+- **Neden 10 dakika?** Sürücü kapısı biniş sırasında da açılır. Test aracında ilk kilometre verisi, binişten 3 ile 7 dakika sonra geldi. 10 dakikalık bekleme bu süreyi karşılar. Sayaç, sürücü kapısı her açıldığında baştan başlar.
+- **Hatırlatmalar.** Her hatırlatma bir öncekinin iki katı bekler: 1 saat, 2 saat, 4 saat, sonra 8 saat. Gece boyunca açık kalan bir parça saat başı bildirim yollamaz.
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. En eski açılan parça başta durur.
 - **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa son 24 saatin mesajlarını yeniden okur ve o dönemin gerçek saatlerini korur. 24 saatten uzun süredir açık kalan bir parçanın saati, okumanın başladığı an olarak görünür.
 - **Yeni bir parça açılırsa.** Bekleme süresi dolunca yeni bir bildirim düşer. Bu bildirim de tüm açık parçaları sıralar.

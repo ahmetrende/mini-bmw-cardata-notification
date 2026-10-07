@@ -58,8 +58,8 @@ Found a problem, or do you need a new event? Open an issue in this repository.
 
 | Situation | Notification |
 |---|---|
-| You park, leave the car, and a part stays open | After 3 minutes |
-| A part is still open | A reminder every 60 minutes |
+| You park, leave the car, and a part stays open | After 10 minutes |
+| A part is still open | Reminders after 1, 2 and 4 hours, then every 8 hours |
 | You close all parts | One message that says everything is closed |
 | You drive | No notification |
 
@@ -69,7 +69,8 @@ One notification lists all open parts. Each part shows the time it opened. You c
 
 - **No lock state.** CarData does not send the door lock state. The program reacts to "parked and open", not to "locked and open".
 - **No ignition or speed data** on the tested car. The program finds driving from the odometer.
-- **A long stop in traffic** (10 minutes or more) can count as parked.
+- **The notification comes 10 minutes after the driver door opens.** After a drive starts, the first odometer value comes in 3 to 7 minutes. A shorter wait gives false notifications at the start of a drive.
+- **A long stop without the driver door opening** (30 minutes or more) counts as parked.
 - **One connection for each account.** Do not run the program twice with the same account.
 - **BMW can change the service.** The program can stop working without notice.
 

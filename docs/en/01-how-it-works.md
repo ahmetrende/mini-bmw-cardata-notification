@@ -33,10 +33,10 @@ The tested car sends no ignition, motion or speed data. The program finds drivin
 
 | Situation | Decision |
 |---|---|
-| The odometer rose in the last 10 minutes | Driving. No notification. |
+| The odometer rose after the last driver door opening, in the last 30 minutes | Driving. No notification. |
 | The odometer rose, then the driver door opened | The driver left. Parking starts. |
-| The odometer did not rise for 10 minutes | Parked. |
-| The program has no odometer data | A part that is open for 3 minutes causes a notification. |
+| The odometer did not rise for 30 minutes | Parked. A traffic jam can stop the odometer for more than 10 minutes. |
+| The program has no odometer data | A part that is open for 10 minutes causes a notification. |
 
 If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 
@@ -44,12 +44,15 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 
 | Rule | Default | Setting in `config.json` |
 |---|---|---|
-| Wait time after parking | 3 minutes | `alert_after_min` |
-| Reminder when a part is still open | 60 minutes | `remind_every_min` |
-| Odometer idle time that counts as parked | 10 minutes | `park_after_idle_min` |
+| Wait time after the last driver door opening | 10 minutes | `alert_after_min` |
+| First reminder when a part is still open | 60 minutes | `remind_every_min` |
+| Longest time between two reminders | 480 minutes (8 hours) | `remind_max_min` |
+| Odometer idle time that counts as parked | 30 minutes | `park_after_idle_min` |
 | Language of the notification text | `en` | `language` (`en` or `tr`) |
 | Time zone of the times in the notification | the server time zone | `timezone` (example: `Europe/Istanbul`) |
 
+- **Why 10 minutes.** The driver door also opens when the driver gets in. In the test car, the first odometer value came 3 to 7 minutes after the driver got in. A wait of 10 minutes covers that time. The timer starts again at each driver door opening.
+- **Reminders.** Each reminder waits twice as long as the one before: 1 hour, 2 hours, 4 hours, then 8 hours. A part that stays open all night does not send a notification each hour.
 - **One message.** A notification lists all open parts. The oldest part comes first.
 - **Time of each part.** A part shows "since 13:48". This is the time the program first saw the part open. For an earlier day, the notification shows the date too, for example "since 6 Oct 13:48". After a restart, the program replays the messages of the last 24 hours. It keeps the original times from that period. A part that was open for more than 24 hours shows the start of the replay as its time.
 - **A new part opens.** After the wait time you get a new notification. It lists all open parts.

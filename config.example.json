@@ -3,7 +3,8 @@
   "ntfy_topic": "mini-your-long-random-name",
   "language": "en",
   "timezone": "Europe/Istanbul",
-  "alert_after_min": 3,
+  "alert_after_min": 10,
   "remind_every_min": 60,
-  "park_after_idle_min": 10
+  "remind_max_min": 480,
+  "park_after_idle_min": 30
 }
