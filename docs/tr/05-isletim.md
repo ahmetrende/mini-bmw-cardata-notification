@@ -19,6 +19,7 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
 | Yeniden başlatmak | `sudo systemctl restart mini-watch` |
 | Durdurmak | `sudo systemctl stop mini-watch` |
 | Deneme bildirimi yollamak | `sudo mini-watch ntfy-test` |
+| Kurulumu kontrol etmek (bir şey yollamaz) | `sudo mini-watch doctor` |
 
 Log'u bilgisayarından tek komutla izlemek için:
 
@@ -41,6 +42,8 @@ Log satırları her zaman İngilizce yazılır. Yalnızca bildirim metni `langua
 | `Could not refresh the token ...` | Yeniden giriş yapman gerekiyor. Aşağıya bak. |
 | `Notification failed: ...` | ntfy'ye ulaşılamadı. Program 30 saniye sonra yeniden dener, sonra her seferinde daha uzun bekler, en çok 10 dakika. Satır tekrar ediyorsa konu adını ve ağı kontrol et. |
 | `Subscribe error: ... Reconnecting.` | Akış aboneliği reddetti. Program yeniden bağlanır. Satır tekrar ediyorsa portalda **CarData Stream** anahtarının açık olduğunu kontrol et. |
+| `The history file is full. ...` | `messages.jsonl` 10 MB'a ulaştı ve `messages.jsonl.1` oldu. Bu normal. |
+| `A stream message was skipped: ...` | Mesaj çok büyüktü (64 KB'tan fazla). Program onu kaydetmedi. |
 | `Unknown value "..." for ...` | Araç, programın tanımadığı bir değer yolladı. Parça son bilinen durumunda kalır. Lütfen bir issue aç ve bu satırı ekle. |
 | `Set "ntfy_topic" ...` veya `"..." must be a number of minutes ...` | Program başlamadı. `config.json` içindeki bir değer hatalı. Düzelt ve servisi yeniden başlat. |
 
@@ -59,6 +62,8 @@ sudo systemctl restart mini-watch
 | `remind_every_min` | 60 | Parça hâlâ açıksa ilk hatırlatma süresi. Sonraki her hatırlatma iki kat bekler. |
 | `remind_max_min` | 480 | İki hatırlatma arasındaki en uzun süre |
 | `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |
+| `silence_alert_hours` | 0 (kapalı) | Araçtan bu kadar saat veri gelmezse tek bir bildirim. Araç uyurken hiçbir şey yollamaz. Bu yüzden uzun süre park hâlinde de bu bildirim gelir. |
+| `vehicle_names` | `{}` | Hesapta birden fazla araç varsa araçların adları. Örnek: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | Kendi ntfy sunucunun adresi |
 
 ## Programı güncelle
@@ -72,7 +77,20 @@ git pull
 sudo bash deploy/install.sh
 ```
 
-Betik `config.json` ve `tokens.json` dosyalarına dokunmaz. Servis çalışıyorsa yeniden başlatır. Eski kurulumlar verileri `/opt/mini-watch` içinde tutuyordu. Betik bu verileri bir kez `/var/lib/mini-watch` klasörüne taşır. Eski `run.log` dosyası `/var/lib/mini-watch/run-before-journal.log` olur.
+Betik şu adımları izler:
+
+1. Yeni sürümü `/opt/mini-watch/releases` içinde yeni bir klasöre kurar. Çalışan servis onu henüz kullanmaz.
+2. Yeni sürümü senin ayarlarınla kontrol eder (`doctor --offline`). Bir kontrol başarısız olursa hiçbir şey değişmez.
+3. Yeni sürüme geçer ve servisi yeniden başlatır.
+4. `Subscribed` satırını en çok 2 dakika bekler. Satır gelmezse önceki sürüme döner.
+
+Betik `config.json` ve `tokens.json` dosyalarına dokunmaz. En yeni 3 sürümü saklar. Eski kurulumlar kodu ve verileri `/opt/mini-watch` içinde tutuyordu. Betik bunları bir kez taşır. Eski `run.log` dosyası `/var/lib/mini-watch/run-before-journal.log` olur.
+
+Önceki sürüme elle dönmek için:
+
+```bash
+sudo bash deploy/install.sh --rollback
+```
 
 ## Yeniden giriş yap
 
@@ -116,13 +134,7 @@ Konsoldaki **Reset** düğmesini veya `gcloud compute instances reset` komutunu 
 
 ## Disk kullanımı
 
-Log'un boyutunu sistem günlüğü kendisi sınırlar. `messages.jsonl` sürekli büyür, günde birkaç MB tutar. 30 GB disk yıllarca yeter. Küçültmek istersen:
-
-```bash
-sudo systemctl stop mini-watch
-sudo -u miniwatch sh -c 'cd /var/lib/mini-watch && umask 077 && tail -n 5000 messages.jsonl > m.tmp && mv m.tmp messages.jsonl'
-sudo systemctl start mini-watch
-```
+Log'un boyutunu sistem günlüğü kendisi sınırlar. Program mesaj geçmişini 10 MB'lık iki dosyayla sınırlar. Bir şey temizlemen gerekmez. Boş alanı görmek için `sudo mini-watch doctor` komutunu çalıştır.
 
 ## Her şeyi sil
 

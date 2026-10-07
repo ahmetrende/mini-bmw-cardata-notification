@@ -1,0 +1,39 @@
+# Runs the tests and the checks for each push and pull request. No secret is needed.
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Shell syntax
+        run: |
+          bash -n deploy/install.sh
+          sh -n deploy/mini-watch
+      - name: systemd unit
+        run: systemd-analyze verify deploy/mini-watch.service 2>&1 | grep -v -e "mini-watch.service: Command /usr/local/bin/node is not executable" -e "Unit is bound to inactive unit" | tee /tmp/verify.txt && test ! -s /tmp/verify.txt
+      - name: No private data in the repository
+        run: |
+          if git grep -nIE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|WMW[A-Z0-9]{14}|eyJ[A-Za-z0-9_-]{20,}\.|/Users/|@gmail\.com' \
+            | grep -v -e '1a2b3c4d-1111-2222-3333-444455556666' -e 'git grep'; then
+            echo "Private data found. Use placeholders." >&2
+            exit 1
+          fi
+      - name: Known vulnerabilities in the dependencies
+        run: npm audit --omit=dev

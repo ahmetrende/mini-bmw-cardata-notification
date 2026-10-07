@@ -138,7 +138,7 @@ cd mini-bmw-cardata-notification
 sudo bash deploy/install.sh
 ```
 
-Betik Node 22'yi kurar, `miniwatch` kullanıcısını oluşturur, programı `/opt/mini-watch` içine kopyalar ve servisi kurar. Ayarların ve verilerin `/var/lib/mini-watch` klasöründe durur. Bu klasörü yalnızca `miniwatch` kullanıcısı okuyabilir. Betik ayrıca `mini-watch` komutunu kurar. İş bitince "Install done." yazar.
+Betik Node 22'yi kurar, `miniwatch` kullanıcısını oluşturur, programı `/opt/mini-watch/releases` içine kurar ve servisi kurar. Ayarların ve verilerin `/var/lib/mini-watch` klasöründe durur. Bu klasörü yalnızca `miniwatch` kullanıcısı okuyabilir. Betik ayrıca `mini-watch` komutunu kurar. İş bitince "Install done." yazar.
 
 Saat dilimini ayarlamak isteğe bağlı. Yalnızca log'daki saatleri etkiler:
 
@@ -195,6 +195,12 @@ Subscribed: qos0
 ```
 
 Log izlemeyi bitirmek için `Ctrl+C` tuşlarına bas. Servis çalışmaya devam eder.
+
+Kurulumu kontrol et. Çıktıda `FAIL` satırı olmamalı:
+
+```bash
+sudo mini-watch doctor
+```
 
 Telefonuna bir deneme bildirimi yolla:
 

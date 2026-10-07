@@ -2,12 +2,31 @@
 // Listens to the BMW/MINI CarData stream. Sends a phone notification through ntfy
 // when a door, window, sunroof, trunk or hood stays open after you park.
 //
-//   node mini_watch.mjs login      # once: get a device code, approve it in the browser
-//   node mini_watch.mjs run        # listen to the stream (runs forever)
-//   node mini_watch.mjs ntfy-test  # send a test notification to the phone
+//   node mini_watch.mjs login             # once: get a device code, approve it in the browser
+//   node mini_watch.mjs run               # listen to the stream (runs forever)
+//   node mini_watch.mjs ntfy-test         # send a test notification to the phone
+//   node mini_watch.mjs doctor [--offline] # check the settings, files and connections. Sends nothing.
+import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs';
+import {
+  appendFileSync,
+  closeSync,
+  createReadStream,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  statfsSync,
+  writeSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
+import tls from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import mqtt from 'mqtt';
 
@@ -18,9 +37,11 @@ const DATA_DIR = process.env.MINI_WATCH_DATA || process.env.STATE_DIRECTORY || H
 const CONFIG = join(DATA_DIR, 'config.json');
 const TOKENS = join(DATA_DIR, 'tokens.json');
 const MESSAGES = join(DATA_DIR, 'messages.jsonl');
-const STATE = join(DATA_DIR, 'state.json'); // Notification state. A restart must not repeat an alert.
+const STATE = join(DATA_DIR, 'state.json'); // Open parts and notification memory. A restart must not repeat an alert.
 
 const OAUTH = 'https://customer.bmwgroup.com/gcdm/oauth';
+// BMW's integration guide asks for both CarData scopes. The program uses only the stream.
+// A login with only the stream scope is not tested.
 const SCOPE = 'authenticate_user openid cardata:streaming:read cardata:api:read';
 const MQTT_HOST = 'customer.streaming-cardata.bmwgroup.com';
 const MQTT_PORT = 9000;
@@ -30,8 +51,14 @@ const RECONNECT_MIN_S = 5;
 const RECONNECT_MAX_S = 60;
 const REPLAY_HOURS = 24;
 const HTTP_TIMEOUT_MS = 15_000;
-const NOTIFY_RETRY_MIN_S = 30; // After a failed notification, try again after 30, 60, 120 ... seconds.
+const MAX_HTTP_BODY_BYTES = 64 * 1024;
+const MAX_PAYLOAD_BYTES = 64 * 1024; // A stream message has about 300 bytes. A larger one is not stored.
+const HISTORY_MAX_BYTES = 10 * 1024 * 1024; // At this size messages.jsonl becomes messages.jsonl.1. Two files at most.
+const NOTIFY_RETRY_MIN_S = 30; // After a failed notification, try again after about 30, 60, 120 ... seconds.
 const NOTIFY_RETRY_MAX_S = 600;
+const STATE_VERSION = 2;
+const SAVE_EVERY_S = 60; // Save the open parts at most once a minute. Save at once after a notification.
+const PROGRESS_LIMIT_S = 600; // The watchdog ping stops when the main loop did not run for 10 minutes.
 const EXAMPLE_TOPIC = 'mini-your-long-random-name'; // The example topic of older versions. Everybody knows it.
 const MIN_TOPIC_LENGTH = 16;
 
@@ -69,6 +96,8 @@ const TEXT = {
     openBody: (items) => `Open: ${items}`,
     closedTitle: 'MINI',
     closedBody: 'Everything is closed.',
+    silenceTitle: 'MINI no data',
+    silenceBody: (hours) => `No data from the car for ${hours} hours. Check the server and the CarData portal.`,
     testTitle: 'MINI test',
     testBody: 'Notifications work.',
   },
@@ -86,11 +115,15 @@ const TEXT = {
     openBody: (items) => `Açık: ${items}`,
     closedTitle: 'MINI',
     closedBody: 'Her şey kapandı.',
+    silenceTitle: 'MINI veri yok',
+    silenceBody: (hours) => `Araçtan ${hours} saattir veri gelmiyor. Sunucuyu ve CarData portalını kontrol et.`,
     testTitle: 'MINI deneme',
     testBody: 'Bildirim çalışıyor.',
   },
 };
 const textFor = (cfg) => TEXT[cfg.language] ?? TEXT.en;
+// With more than one car, the title names the car: "MINI left open (Countryman)".
+const withName = (title, name) => (name ? `${title} (${name})` : title);
 
 // Turkish adds -den, -dan, -ten or -tan to a time, for example "13:50'den". The suffix follows the
 // last spoken word of the time: the minute, or the hour when the minute is 00.
@@ -151,6 +184,8 @@ export const DEFAULT_CONFIG = {
   remind_every_min: 60,
   remind_max_min: 480,
   park_after_idle_min: 30,
+  silence_alert_hours: 0, // 0 = off. Otherwise one notification when the car sends no data for this time.
+  vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
   ntfy_server: 'https://ntfy.sh',
   ntfy_topic: '',
 };
@@ -158,6 +193,7 @@ export const DEFAULT_CONFIG = {
 // Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
 const MINUTE_SETTINGS = { alert_after_min: 0, remind_every_min: 1, remind_max_min: 1, park_after_idle_min: 1 };
 const MAX_MINUTES = 7 * 24 * 60;
+const MAX_SILENCE_HOURS = 30 * 24;
 
 export function checkConfig(cfg) {
   if (!TEXT[cfg.language]) throw new Error(`Unknown language "${cfg.language}". Use "en" or "tr".`);
@@ -171,6 +207,17 @@ export function checkConfig(cfg) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > MAX_MINUTES) {
       throw new Error(`"${key}" must be a number of minutes from ${min} to ${MAX_MINUTES}. Now it is ${JSON.stringify(value)}.`);
     }
+  }
+  const hours = cfg.silence_alert_hours;
+  if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0 || hours > MAX_SILENCE_HOURS) {
+    throw new Error(`"silence_alert_hours" must be a number from 0 (off) to ${MAX_SILENCE_HOURS}. Now it is ${JSON.stringify(hours)}.`);
+  }
+  const names = cfg.vehicle_names;
+  if (!names || typeof names !== 'object' || Array.isArray(names) || Object.values(names).some((name) => typeof name !== 'string')) {
+    throw new Error('"vehicle_names" must look like {"VIN": "name"}.');
+  }
+  if (!/^https?:\/\/[^\s/]+/.test(String(cfg.ntfy_server))) {
+    throw new Error(`"ntfy_server" must be an address like "https://ntfy.sh". Now it is ${JSON.stringify(cfg.ntfy_server)}.`);
   }
   const known = new Set([...Object.keys(DEFAULT_CONFIG), 'client_id']);
   const unknown = Object.keys(cfg).filter((key) => !known.has(key));
@@ -199,6 +246,18 @@ export function checkTopic(cfg) {
   }
 }
 
+// Reads an HTTP answer, but not more than `limit` bytes. A larger answer is an error.
+export async function readBody(resp, limit = MAX_HTTP_BODY_BYTES) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of resp.body ?? []) {
+    size += chunk.length;
+    if (size > limit) throw new Error(`The answer is larger than ${limit} bytes.`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function postForm(url, data) {
   const resp = await fetch(url, {
     method: 'POST',
@@ -206,7 +265,7 @@ async function postForm(url, data) {
     body: new URLSearchParams(data),
     signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   });
-  const text = await resp.text();
+  const text = await readBody(resp);
   try {
     return { ...JSON.parse(text), _status: resp.status };
   } catch {
@@ -214,14 +273,19 @@ async function postForm(url, data) {
   }
 }
 
-function saveTokens(resp) {
-  const tokens = {
-    access_token: resp.access_token,
-    refresh_token: resp.refresh_token,
+// The fields of tokens.json. The access token is not kept: the program does not use it.
+// A refresh answer without a new refresh token or GCID keeps the old values.
+export function tokenRecord(resp, old = {}, at = now()) {
+  return {
+    refresh_token: resp.refresh_token ?? old.refresh_token,
     id_token: resp.id_token,
-    gcid: resp.gcid,
-    id_expires_at: now() + Number(resp.expires_in ?? 3600),
+    gcid: resp.gcid ?? old.gcid,
+    id_expires_at: at + Number(resp.expires_in ?? 3600),
   };
+}
+
+function saveTokens(resp, old = {}) {
+  const tokens = tokenRecord(resp, old);
   writeFileAtomic(TOKENS, JSON.stringify(tokens));
   return tokens;
 }
@@ -285,7 +349,7 @@ async function getTokens(cfg) {
   if (!resp.id_token) {
     throw new Error(`Could not refresh the token: ${JSON.stringify(resp)}. Run the "login" command again.`);
   }
-  return saveTokens(resp);
+  return saveTokens(resp, tokens);
 }
 
 const NTFY_PRIORITY = { default: 3, high: 4 };
@@ -310,6 +374,7 @@ export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning'
       }),
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
+    await resp.body?.cancel(); // The program does not read the answer.
     log(resp.ok ? `Notification sent: ${text}` : `Notification failed: HTTP ${resp.status}`);
     return resp.ok;
   } catch (err) {
@@ -335,12 +400,33 @@ const parseBool = (value) => {
   return null; // unknown
 };
 
+// The car of a message: the "vin" field, or the last part of the MQTT topic (<GCID>/<VIN>).
+export function vinOf(payload, topic = '') {
+  return String(payload?.vin || String(topic).split('/')[1] || 'unknown');
+}
+
+// Checks one MQTT message. Returns { raw, vin, data }, or { error } for a message that the program skips.
+export function parseStreamMessage(topic, payload) {
+  if (payload.length > MAX_PAYLOAD_BYTES) return { error: `${payload.length} bytes, the limit is ${MAX_PAYLOAD_BYTES}` };
+  const raw = payload.toString();
+  try {
+    const parsed = JSON.parse(raw);
+    return { raw, vin: vinOf(parsed, topic), data: parsed.data ?? {} };
+  } catch {
+    return { raw, error: 'not JSON' };
+  }
+}
+
+// The state of one car.
 export class Watcher {
   // clock: a function that returns the current time in seconds. Tests and replays pass their own clock.
-  constructor(cfg, { persist = false, clock = now } = {}) {
+  // random: a number from 0 to 1 for the retry jitter. Tests pass a fixed value.
+  // name: a function that returns the name of the car for the title, or '' for one car.
+  constructor(cfg, { clock = now, random = Math.random, name = () => '' } = {}) {
     this.cfg = cfg;
-    this.persist = persist; // Tests do not write to disk.
     this.clock = clock;
+    this.random = random;
+    this.name = name;
     this.openSince = new Map(); // attribute -> time it was first seen open
     this.notified = new Set();
     this.alerted = false; // Did at least one "left open" notification go out?
@@ -357,6 +443,8 @@ export class Watcher {
     this.notifyFailures = 0; // failed notifications in a row
     this.retryAt = 0; // after a failed notification, the next try waits until this time
     this.unknownSeen = new Set(); // unknown values that are already in the log
+    this.dirty = false; // The state changed since the last save.
+    this.urgent = false; // The notification memory changed. Save it at once.
   }
 
   // Some cars (the tested Countryman E, U25) send no ignition or motion data.
@@ -371,32 +459,40 @@ export class Watcher {
     return this.kmChangedAt > this.lastDriverDoorAt && this.clock() - this.kmChangedAt < idleLimit;
   }
 
-  saveState() {
-    if (!this.persist) return;
-    const state = {
+  // Everything that a restart needs: the open parts, the odometer and the notification memory.
+  snapshot() {
+    return {
+      openSince: [...this.openSince],
+      lastKm: this.lastKm,
+      kmChangedAt: this.kmChangedAt,
+      lastDriverDoorAt: this.lastDriverDoorAt,
       notified: [...this.notified],
       lastNotify: this.lastNotify,
       reminders: this.reminders,
       alerted: this.alerted,
-      savedAt: this.clock(),
+      sawClose: this.sawClose,
     };
-    writeFileAtomic(STATE, JSON.stringify(state));
   }
 
-  // Ignore a saved state that is older than the last odometer increase (the car drove since)
-  // or older than the replayed history (REPLAY_HOURS).
-  loadState() {
-    try {
-      const state = JSON.parse(readFileSync(STATE, 'utf8'));
-      if (state.savedAt < this.kmChangedAt || this.clock() - state.savedAt > REPLAY_HOURS * 3600) return false;
-      this.notified = new Set(state.notified);
-      this.lastNotify = state.lastNotify;
-      this.reminders = state.reminders ?? 0;
-      this.alerted = state.alerted;
-      return true;
-    } catch {
-      return false;
-    }
+  // Before the history replay. The replay then applies the newer messages on top.
+  // A part that is open for more than 24 hours keeps its time this way.
+  restoreWatch(snap) {
+    this.openSince = new Map(snap.openSince ?? []);
+    this.lastKm = snap.lastKm ?? null;
+    this.kmChangedAt = snap.kmChangedAt ?? 0;
+    this.lastDriverDoorAt = snap.lastDriverDoorAt ?? 0;
+  }
+
+  // After the history replay. Ignore a notification memory that is older than the last odometer
+  // increase (the car drove since).
+  restoreNotify(snap, savedAt) {
+    if (savedAt < this.kmChangedAt) return false;
+    this.notified = new Set(snap.notified ?? []);
+    this.lastNotify = snap.lastNotify ?? 0;
+    this.reminders = snap.reminders ?? 0;
+    this.alerted = Boolean(snap.alerted);
+    this.sawClose = Boolean(snap.sawClose);
+    return true;
   }
 
   // The wait time starts at the later of: the last driver door opening, the last odometer increase.
@@ -408,6 +504,7 @@ export class Watcher {
 
   // "at" is the time of the message. A replay at startup passes the original time.
   onData(data, at = this.clock()) {
+    this.dirty = true;
     for (const [name, item] of Object.entries(data)) {
       if (name === IGNITION) this.ignition = parseBool(item?.value);
       else if (name === MOVING) this.moving = parseBool(item?.value);
@@ -444,15 +541,17 @@ export class Watcher {
     }
   }
 
-  // A failed notification does not change the state. The next check sends it again,
-  // after a wait that doubles each time: 30 seconds up to 10 minutes.
+  // A failed notification does not change the state. The next check sends it again, after a wait
+  // that doubles each time: about 30 seconds up to 10 minutes. A random part of +-20 % spreads the tries.
   notifyResult(ok) {
     if (ok) {
       this.notifyFailures = 0;
       this.retryAt = 0;
+      this.urgent = true;
       return true;
     }
-    const wait = Math.min(NOTIFY_RETRY_MIN_S * 2 ** this.notifyFailures, NOTIFY_RETRY_MAX_S);
+    const base = Math.min(NOTIFY_RETRY_MIN_S * 2 ** this.notifyFailures, NOTIFY_RETRY_MAX_S);
+    const wait = Math.round(base * (0.8 + 0.4 * this.random()));
     this.notifyFailures += 1;
     this.retryAt = this.clock() + wait;
     log(`The program tries the notification again in ${wait} seconds.`);
@@ -475,11 +574,10 @@ export class Watcher {
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {
-        const sent = await ntfy(this.cfg, t.closedTitle, t.closedBody, 'default', 'white_check_mark');
+        const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody, 'default', 'white_check_mark');
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
-        this.saveState();
       }
       return;
     }
@@ -493,59 +591,228 @@ export class Watcher {
       // The oldest open part comes first. Each part shows the time the program first saw it open.
       const items = [...current]
         .sort((a, b) => this.openSince.get(a) - this.openSince.get(b))
-        .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(this.openSince.get(name), this.cfg))}`)
+        .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(this.openSince.get(name), this.cfg, this.clock()))}`)
         .join(', ');
-      const sent = await ntfy(this.cfg, added ? t.openTitle : t.stillOpenTitle, t.openBody(items));
+      const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
+      const sent = await ntfy(this.cfg, title, t.openBody(items));
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
       this.notified = current;
       this.lastNotify = this.clock();
-      this.saveState();
     }
+  }
+}
+
+// All cars of the account. The stream topic <GCID>/+ carries the messages of every car.
+// Each car has its own Watcher, so the parts of two cars do not mix.
+export class Fleet {
+  constructor(cfg, { clock = now, random = Math.random, stateFile = null } = {}) {
+    this.cfg = cfg;
+    this.clock = clock;
+    this.random = random;
+    this.stateFile = stateFile; // null: do not save (tests and replays)
+    this.watchers = new Map(); // VIN -> Watcher
+    this.startedAt = clock();
+    this.lastMessageAt = 0;
+    this.silenceAlerted = false;
+    this.silenceRetryAt = 0;
+    this.lastSave = 0;
+    this.dirty = false;
+    this.saved = null; // the state file as it was at the start
+  }
+
+  watcher(vin) {
+    if (!this.watchers.has(vin)) {
+      this.watchers.set(vin, new Watcher(this.cfg, { clock: this.clock, random: this.random, name: () => this.displayName(vin) }));
+    }
+    return this.watchers.get(vin);
+  }
+
+  // A name from vehicle_names, or the last 4 characters of the VIN when the account has more than one car.
+  displayName(vin) {
+    const named = this.cfg.vehicle_names?.[vin];
+    if (named) return named;
+    return this.watchers.size > 1 ? `…${String(vin).slice(-4)}` : '';
+  }
+
+  onMessage(vin, data, at = this.clock()) {
+    this.lastMessageAt = Math.max(this.lastMessageAt, at);
+    this.silenceAlerted = false;
+    this.dirty = true;
+    this.watcher(vin).onData(data, at);
+  }
+
+  async check() {
+    for (const watcher of this.watchers.values()) await watcher.check();
+    await this.checkSilence();
+    this.save();
+  }
+
+  // Optional (silence_alert_hours). One notification when no message came for that time.
+  // The car sends nothing while it sleeps, so a long parked time also gives this notification.
+  async checkSilence() {
+    const hours = this.cfg.silence_alert_hours;
+    if (!hours || this.silenceAlerted || this.clock() < this.silenceRetryAt) return;
+    if (this.clock() - (this.lastMessageAt || this.startedAt) < hours * 3600) return;
+    const t = textFor(this.cfg);
+    if (await ntfy(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', 'grey_question')) {
+      this.silenceAlerted = true;
+      this.dirty = true;
+    } else {
+      this.silenceRetryAt = this.clock() + NOTIFY_RETRY_MAX_S;
+    }
+  }
+
+  // Saves at once after a notification, else at most once a minute. force: save now (at shutdown).
+  save(force = false) {
+    if (!this.stateFile) return;
+    const watchers = [...this.watchers.values()];
+    const urgent = watchers.some((watcher) => watcher.urgent);
+    const dirty = this.dirty || watchers.some((watcher) => watcher.dirty);
+    if (!force && !urgent && !(dirty && this.clock() - this.lastSave >= SAVE_EVERY_S)) return;
+    const state = {
+      version: STATE_VERSION,
+      savedAt: this.clock(),
+      lastMessageAt: this.lastMessageAt,
+      silenceAlerted: this.silenceAlerted,
+      vehicles: Object.fromEntries([...this.watchers].map(([vin, watcher]) => [vin, watcher.snapshot()])),
+    };
+    writeFileAtomic(this.stateFile, JSON.stringify(state));
+    for (const watcher of watchers) watcher.dirty = watcher.urgent = false;
+    this.dirty = false;
+    this.lastSave = this.clock();
+  }
+
+  // Step 1 of a start, before the history replay: restore the open parts and the odometer.
+  loadSnapshot() {
+    try {
+      this.saved = JSON.parse(readFileSync(this.stateFile, 'utf8'));
+    } catch {
+      this.saved = null;
+    }
+    const saved = this.saved;
+    if (saved?.version !== STATE_VERSION || this.clock() - saved.savedAt > REPLAY_HOURS * 3600) return false;
+    for (const [vin, snap] of Object.entries(saved.vehicles ?? {})) this.watcher(vin).restoreWatch(snap);
+    return true;
+  }
+
+  // Step 2, after the replay: restore the notification memory. Returns the VINs that got it back.
+  loadNotifyState() {
+    const saved = this.saved;
+    if (!saved || !(this.clock() - saved.savedAt <= REPLAY_HOURS * 3600)) return [];
+    if (saved.version === STATE_VERSION) {
+      this.silenceAlerted = Boolean(saved.silenceAlerted) && (saved.lastMessageAt ?? 0) >= this.lastMessageAt;
+      this.lastMessageAt = Math.max(this.lastMessageAt, saved.lastMessageAt ?? 0);
+      return Object.entries(saved.vehicles ?? {})
+        .filter(([vin, snap]) => this.watcher(vin).restoreNotify(snap, saved.savedAt))
+        .map(([vin]) => vin);
+    }
+    // The state file of an older version has no VIN. It belongs to the only car.
+    if (this.watchers.size === 1) {
+      const [vin, watcher] = [...this.watchers][0];
+      if (watcher.restoreNotify({ ...saved, sawClose: false }, saved.savedAt)) return [vin];
+    }
+    return [];
+  }
+}
+
+// Saves the raw stream messages for the replay at a restart and for tools/replay.mjs.
+// At HISTORY_MAX_BYTES the file becomes messages.jsonl.1 (the older .1 file is deleted).
+export class History {
+  constructor(file = MESSAGES, maxBytes = HISTORY_MAX_BYTES) {
+    this.file = file;
+    this.maxBytes = maxBytes;
+    this.size = existsSync(file) ? statSync(file).size : 0;
+  }
+
+  append(raw, at = now()) {
+    const line = `${JSON.stringify({ t: at, payload: raw })}\n`;
+    const bytes = Buffer.byteLength(line);
+    if (this.size > 0 && this.size + bytes > this.maxBytes) {
+      renameSync(this.file, `${this.file}.1`);
+      this.size = 0;
+      log(`The history file is full. It is now ${this.file}.1.`);
+    }
+    appendFileSync(this.file, line, { mode: 0o600 });
+    this.size += bytes;
   }
 }
 
 // A restart must not lose the odometer and door history. Replay the messages of the last 24 hours.
+// The files are read line by line, so a large file does not fill the memory.
 // A broken line (for example the last line after a crash) is skipped. The other lines still count.
-export function replayRecent(watcher, file = MESSAGES) {
+export async function replayRecent(fleet, files = [`${MESSAGES}.1`, MESSAGES]) {
   let count = 0;
   let broken = 0;
-  let text = '';
-  try {
-    text = readFileSync(file, 'utf8');
-  } catch {
-    // No file yet. Start with an empty state.
-  }
-  const cutoff = watcher.clock() - REPLAY_HOURS * 3600;
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let msg;
-    let data;
-    try {
-      msg = JSON.parse(line);
-      data = JSON.parse(msg.payload).data ?? {};
-    } catch {
-      broken += 1;
-      continue;
+  const cutoff = fleet.clock() - REPLAY_HOURS * 3600;
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const lines = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      let msg;
+      let payload;
+      try {
+        msg = JSON.parse(line);
+        payload = JSON.parse(msg.payload);
+      } catch {
+        broken += 1;
+        continue;
+      }
+      if (!(msg.t >= cutoff)) continue;
+      fleet.onMessage(vinOf(payload), payload.data ?? {}, msg.t);
+      count += 1;
     }
-    if (!(msg.t >= cutoff)) continue;
-    watcher.onData(data, msg.t);
-    count += 1;
   }
-  const lastKm = watcher.kmChangedAt ? new Date(watcher.kmChangedAt * 1000).toTimeString().slice(0, 8) : 'none';
-  log(`History loaded: ${count} messages${broken ? `, ${broken} broken lines skipped` : ''}. Last odometer increase: ${lastKm}.`);
+  const lastKm = Math.max(0, ...[...fleet.watchers.values()].map((watcher) => watcher.kmChangedAt));
+  const lastKmText = lastKm ? new Date(lastKm * 1000).toTimeString().slice(0, 8) : 'none';
+  log(`History loaded: ${count} messages${broken ? `, ${broken} broken lines skipped` : ''}. Last odometer increase: ${lastKmText}.`);
   return { count, broken };
 }
 
+// systemd watchdog (WatchdogSec in deploy/mini-watch.service). The program sends "WATCHDOG=1" while
+// the main loop runs. If the loop stops for PROGRESS_LIMIT_S, the pings stop and systemd restarts the service.
+let lastProgress = Date.now();
+const heartbeat = () => {
+  lastProgress = Date.now();
+};
+
+function startWatchdog() {
+  const usec = Number(process.env.WATCHDOG_USEC);
+  if (!process.env.NOTIFY_SOCKET || !usec) return;
+  let failedOnce = false;
+  const timer = setInterval(() => {
+    if (Date.now() - lastProgress > PROGRESS_LIMIT_S * 1000) return;
+    execFile('systemd-notify', ['WATCHDOG=1'], (err) => {
+      if (err && !failedOnce) log(`Watchdog ping failed: ${err.message}`);
+      failedOnce ||= Boolean(err);
+    });
+  }, Math.max(1000, usec / 1000 / 3));
+  timer.unref();
+}
+
 async function run(cfg) {
-  const watcher = new Watcher(cfg, { persist: true });
-  replayRecent(watcher);
-  if (watcher.loadState()) {
-    log(`Notification state loaded: ${[...watcher.notified].map((name) => label(name, cfg)).join(', ') || 'empty'}.`);
+  const fleet = new Fleet(cfg, { stateFile: STATE });
+  fleet.loadSnapshot();
+  await replayRecent(fleet);
+  const loaded = fleet.loadNotifyState();
+  if (loaded.length) {
+    const parts = loaded.map((vin) => [...fleet.watcher(vin).notified].map((name) => label(name, cfg)).join(', ') || 'empty');
+    log(`Notification state loaded: ${parts.join(' | ')}.`);
   }
+  const history = new History();
+  startWatchdog();
+  const stop = () => {
+    fleet.save(true); // Keep the open parts for the next start.
+    process.exit(0);
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+
   let failures = 0; // Count of short connections in a row
   for (;;) {
+    heartbeat();
     let tokens;
     try {
       tokens = await getTokens(cfg);
@@ -586,17 +853,16 @@ async function run(cfg) {
         log(`Subscribed: ${granted.map((g) => `qos${g.qos}`).join(',')}`);
       });
     });
-    client.on('message', (_topic, payload) => {
-      const raw = payload.toString();
-      appendFileSync(MESSAGES, `${JSON.stringify({ t: now(), payload: raw })}\n`, { mode: 0o600 });
-      let data;
-      try {
-        data = JSON.parse(raw).data ?? {};
-      } catch {
+    client.on('message', (topic, payload) => {
+      const msg = parseStreamMessage(topic, payload);
+      if (msg.error && !msg.raw) {
+        log(`A stream message was skipped: ${msg.error}.`);
         return;
       }
-      log(`Message: ${Object.keys(data).sort().join(', ').slice(0, 200)}`);
-      watcher.onData(data);
+      history.append(msg.raw);
+      if (msg.error) return;
+      log(`Message: ${Object.keys(msg.data).sort().join(', ').slice(0, 200)}`);
+      fleet.onMessage(msg.vin, msg.data);
     });
     client.on('error', (err) => log(`MQTT error: ${err.message}`));
     client.on('close', () => {
@@ -607,7 +873,8 @@ async function run(cfg) {
 
     while (!closed && tokens.id_expires_at - now() > TOKEN_MARGIN_S) {
       await Promise.race([sleep(15_000), closedSignal]); // On a close, do not wait the full 15 seconds.
-      if (!closed) await watcher.check();
+      heartbeat();
+      if (!closed) await fleet.check();
     }
     client.end(true);
 
@@ -621,8 +888,142 @@ async function run(cfg) {
   }
 }
 
+// ---- doctor: checks the setup and prints one line for each check. It sends no notification. ----
+
+const modeText = (path) => (statSync(path).mode & 0o777).toString(8).padStart(3, '0');
+const timeText = (seconds) => new Date(seconds * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+
+function lastLineTime(file) {
+  const size = statSync(file).size;
+  if (size === 0) return null;
+  const length = Math.min(size, 8192);
+  const buffer = Buffer.alloc(length);
+  const fd = openSync(file, 'r');
+  try {
+    readSync(fd, buffer, 0, length, size - length);
+  } finally {
+    closeSync(fd);
+  }
+  const lines = buffer.toString('utf8').trim().split('\n').reverse();
+  for (const line of lines) {
+    try {
+      return JSON.parse(line).t;
+    } catch {
+      // Look at the line before.
+    }
+  }
+  return null;
+}
+
+function tlsCheck(host, port) {
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({ host, port, servername: host, timeout: HTTP_TIMEOUT_MS }, () => {
+      const protocol = socket.getProtocol();
+      socket.end();
+      resolve(protocol);
+    });
+    socket.on('timeout', () => socket.destroy(new Error('timeout')));
+    socket.on('error', reject);
+  });
+}
+
+async function doctor({ offline = false } = {}) {
+  let failed = false;
+  const report = (level, text) => {
+    console.log(`${level.padEnd(4)} ${text}`);
+    if (level === 'FAIL') failed = true;
+  };
+  const privateFile = (path) => {
+    if (existsSync(path) && Number.parseInt(modeText(path), 8) & 0o077) report('WARN', `${path} has mode ${modeText(path)}. Use 600.`);
+  };
+
+  const major = Number(process.versions.node.split('.')[0]);
+  report(major >= 22 ? 'OK' : 'FAIL', `Node ${process.versions.node}, OpenSSL ${process.versions.openssl} (Node 22 or newer is needed)`);
+
+  report('OK', `Data folder: ${DATA_DIR}`);
+  if (Number.parseInt(modeText(DATA_DIR), 8) & 0o077 && DATA_DIR !== HERE) {
+    report('WARN', `The data folder has mode ${modeText(DATA_DIR)}. Use 700.`);
+  }
+
+  let cfg = null;
+  try {
+    cfg = loadConfig();
+    report('OK', 'config.json is valid.');
+    requireClientId(cfg);
+    checkTopic(cfg);
+    report('OK', 'client_id and ntfy_topic are set.');
+  } catch (err) {
+    report('FAIL', err.message);
+  }
+  privateFile(CONFIG);
+
+  if (!existsSync(TOKENS)) {
+    report('FAIL', `${TOKENS} not found. Log in first (docs/en/04-server-setup.md, part 7).`);
+  } else {
+    try {
+      const tokens = JSON.parse(readFileSync(TOKENS, 'utf8'));
+      if (!tokens.refresh_token || !tokens.gcid) report('FAIL', 'tokens.json has no refresh token or GCID. Log in again.');
+      else report('OK', `tokens.json is complete. The ID token is valid until ${timeText(tokens.id_expires_at)}. The service refreshes it.`);
+    } catch (err) {
+      report('FAIL', `tokens.json cannot be read: ${err.message}`);
+    }
+    privateFile(TOKENS);
+  }
+
+  if (existsSync(STATE)) {
+    try {
+      const state = JSON.parse(readFileSync(STATE, 'utf8'));
+      const cars = state.vehicles ? Object.keys(state.vehicles).length : 1;
+      report('OK', `state.json (version ${state.version ?? 1}) saved at ${timeText(state.savedAt)}, ${cars} car(s).`);
+    } catch (err) {
+      report('WARN', `state.json cannot be read: ${err.message}. The program starts without it.`);
+    }
+  } else {
+    report('OK', 'No state.json yet. The service makes it.');
+  }
+
+  const files = [`${MESSAGES}.1`, MESSAGES].filter(existsSync);
+  if (files.length === 0) {
+    report('WARN', 'No car message yet. Open and close a door to wake the car.');
+  } else {
+    const megabytes = files.reduce((sum, file) => sum + statSync(file).size, 0) / 1e6;
+    const last = lastLineTime(files[files.length - 1]);
+    const hours = last ? (now() - last) / 3600 : null;
+    report('OK', `History: ${megabytes.toFixed(1)} MB. Last car message: ${last ? `${timeText(last)} (${hours.toFixed(1)} hours ago)` : 'none'}.`);
+    files.forEach(privateFile);
+  }
+
+  try {
+    const disk = statfsSync(DATA_DIR);
+    const freeMb = (disk.bavail * disk.bsize) / 1e6;
+    report(freeMb > 500 ? 'OK' : 'WARN', `Free disk space: ${Math.round(freeMb)} MB.`);
+  } catch (err) {
+    report('WARN', `Free disk space unknown: ${err.message}`);
+  }
+
+  if (offline) return failed ? 1 : 0;
+
+  if (cfg) {
+    try {
+      const resp = await fetch(new URL('/v1/health', cfg.ntfy_server), { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
+      await resp.body?.cancel();
+      report(resp.ok ? 'OK' : 'FAIL', `ntfy server ${cfg.ntfy_server}: HTTP ${resp.status}.`);
+    } catch (err) {
+      report('FAIL', `ntfy server ${cfg.ntfy_server} cannot be reached: ${err.message}`);
+    }
+  }
+  try {
+    const protocol = await tlsCheck(MQTT_HOST, MQTT_PORT);
+    report(protocol === 'TLSv1.3' ? 'OK' : 'FAIL', `BMW stream server: ${protocol}.`);
+  } catch (err) {
+    report('FAIL', `BMW stream server cannot be reached: ${err.message}`);
+  }
+  return failed ? 1 : 0;
+}
+
 async function main() {
   const command = process.argv[2];
+  if (command === 'doctor') process.exit(await doctor({ offline: process.argv.includes('--offline') }));
   try {
     const cfg = loadConfig();
     if (command === 'login' || command === 'run') requireClientId(cfg);
@@ -634,9 +1035,9 @@ async function main() {
     else if (command === 'run') await run(cfg);
     else if (command === 'ntfy-test') {
       const t = textFor(cfg);
-      await ntfy(cfg, t.testTitle, t.testBody, 'default', 'car');
+      process.exit((await ntfy(cfg, t.testTitle, t.testBody, 'default', 'car')) ? 0 : 1);
     } else {
-      console.error('Usage: node mini_watch.mjs login | run | ntfy-test');
+      console.error('Usage: node mini_watch.mjs login | run | ntfy-test | doctor [--offline]');
       process.exit(2);
     }
   } catch (err) {
@@ -645,5 +1046,13 @@ async function main() {
   }
 }
 
-// A test that imports this file does not start main().
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+// A test that imports this file does not start main(). The service starts the program through the
+// symbolic link /opt/mini-watch/current, so compare the real paths.
+const startedDirectly = () => {
+  try {
+    return realpathSync(process.argv[1] ?? '') === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+if (startedDirectly()) await main();

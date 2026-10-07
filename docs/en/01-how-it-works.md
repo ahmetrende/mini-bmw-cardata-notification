@@ -50,20 +50,24 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 | Odometer idle time that counts as parked | 30 minutes | `park_after_idle_min` |
 | Language of the notification text | `en` | `language` (`en` or `tr`) |
 | Time zone of the times in the notification | the server time zone | `timezone` (example: `Europe/Istanbul`) |
+| Notification when the car sends no data | off | `silence_alert_hours` (example: `72`) |
 
 - **Why 10 minutes.** The driver door also opens when the driver gets in. In the test car, the first odometer value came 3 to 7 minutes after the driver got in. A wait of 10 minutes covers that time. The timer starts again at each driver door opening.
 - **Reminders.** Each reminder waits twice as long as the one before: 1 hour, 2 hours, 4 hours, then 8 hours. A part that stays open all night does not send a notification each hour.
 - **One message.** A notification lists all open parts. The oldest part comes first.
-- **Time of each part.** A part shows "since 13:48". This is the time the program first saw the part open. For an earlier day, the notification shows the date too, for example "since 6 Oct 13:48". After a restart, the program replays the messages of the last 24 hours. It keeps the original times from that period. A part that was open for more than 24 hours shows the start of the replay as its time.
+- **Time of each part.** A part shows "since 13:48". This is the time the program first saw the part open. For an earlier day, the notification shows the date too, for example "since 6 Oct 13:48". After a restart, the program keeps these times. It reads `state.json` and the messages of the last 24 hours. If the program was off for more than 24 hours, a part that is open for longer shows the start of the replay as its time.
 - **A new part opens.** After the wait time you get a new notification. It lists all open parts.
 - **All parts close.** You get one message that says everything is closed. This message follows an earlier notification. The program sends it only after it sees a part close. Missing data does not count as closed. Only the values `CLOSED` and `false` count as closed. An unknown value does not change the state.
 - **You drive again.** The program forgets the old notification. The next parking can send a new one.
+- **More than one car.** The stream sends the messages of all cars of the account. The program watches each car alone. The title then names the car: the name from `vehicle_names`, or the last 4 characters of the VIN. Example: "MINI left open (Countryman)".
 
 ## What happens after a failure
 
 - **Token refresh.** The stream password (ID token) is valid for 1 hour. The program refreshes it 5 minutes before it expires. The refresh key is valid for 2 weeks. The key gets a new date at each refresh. If the server is off for more than 2 weeks, you must log in again.
 - **Connection loss.** After a healthy connection closes, the program reconnects in 5 seconds. After repeated short connections the wait time doubles up to 60 seconds. BMW limits many connection attempts.
-- **Restart.** The program replays the messages of the last 24 hours. It keeps the odometer and door history. It saves sent notifications in `state.json`. The same notification does not repeat. The program skips a broken line in the history.
+- **Restart.** The program saves the open parts, the odometer and the sent notifications in `state.json`. It saves at once after a notification, else at most once a minute. At a start it reads `state.json` and the messages of the last 24 hours. The same notification does not repeat. The program skips a broken line in the history.
+- **History file.** `messages.jsonl` grows to 10 MB. Then it becomes `messages.jsonl.1` and a new file starts. The program keeps two files at most. A message larger than 64 KB is not stored.
+- **Stuck program.** The program tells systemd every 30 seconds that it runs (watchdog). If its main loop stops for 10 minutes, systemd restarts the service.
 - **ntfy is not reachable.** The program does not count the notification as sent. It tries again after 30 seconds. Each next try waits twice as long, up to 10 minutes.
 - **Subscription error.** If the stream refuses the subscription, the program closes the connection and connects again.
 - **Full state in each message.** The car sends all selected attributes in each message. A lost message does not hide a state for long.
@@ -77,7 +81,7 @@ The program watches only doors, windows, sunroof, trunk and hood. CarData has mo
 | Item | Value |
 |---|---|
 | Login | OAuth 2.0 Device Code Flow with PKCE, `customer.bmwgroup.com/gcdm/oauth` |
-| Scopes | `authenticate_user openid cardata:streaming:read cardata:api:read` |
+| Scopes | `authenticate_user openid cardata:streaming:read cardata:api:read`. BMW's guide asks for both CarData scopes. The program uses only the stream and does not keep the access token. A login with only the stream scope is not tested. |
 | Stream | MQTT 3.1.1, `customer.streaming-cardata.bmwgroup.com:9000`, TLS 1.3 required |
 | MQTT user and password | GCID and ID token |
 | Topic | `<GCID>/+` (all cars of the account) |

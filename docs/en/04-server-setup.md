@@ -138,7 +138,7 @@ cd mini-bmw-cardata-notification
 sudo bash deploy/install.sh
 ```
 
-The script installs Node 22, creates the `miniwatch` user, copies the program to `/opt/mini-watch` and installs the service. Your settings and data go to `/var/lib/mini-watch`. Only the `miniwatch` user can read that folder. The script also installs the `mini-watch` command. At the end it shows "Install done."
+The script installs Node 22, creates the `miniwatch` user, installs the program in `/opt/mini-watch/releases` and installs the service. Your settings and data go to `/var/lib/mini-watch`. Only the `miniwatch` user can read that folder. The script also installs the `mini-watch` command. At the end it shows "Install done."
 
 The time zone is optional. It changes only the times in the log:
 
@@ -195,6 +195,12 @@ Subscribed: qos0
 ```
 
 Press `Ctrl+C` to stop the log view. The service keeps running.
+
+Check the setup. The output must have no `FAIL` line:
+
+```bash
+sudo mini-watch doctor
+```
 
 Send a test notification to your phone:
 

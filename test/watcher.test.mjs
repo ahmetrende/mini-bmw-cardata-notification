@@ -1,11 +1,27 @@
 // Run with: npm test
 // These tests use fake car data. They do not call BMW or ntfy.
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { DEFAULT_CONFIG, Watcher, checkConfig, checkTopic, formatTime, label, replayRecent, turkishFromSuffix } from '../mini_watch.mjs';
+import {
+  DEFAULT_CONFIG,
+  Fleet,
+  History,
+  Watcher,
+  checkConfig,
+  checkTopic,
+  formatTime,
+  label,
+  parseStreamMessage,
+  readBody,
+  replayRecent,
+  tokenRecord,
+  turkishFromSuffix,
+} from '../mini_watch.mjs';
 
 const KM = 'vehicle.vehicle.travelledDistance';
 const TILT = 'vehicle.cabin.sunroof.tiltStatus';
@@ -14,10 +30,15 @@ const DRIVER_DOOR = 'vehicle.cabin.door.row1.driver.isOpen';
 const IGNITION = 'vehicle.drivetrain.engine.isIgnitionOn';
 
 const msg = (values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }]));
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Fake VINs. They do not match a real VIN pattern.
+const VIN_A = 'TESTVIN0000000001';
+const VIN_B = 'TESTVIN0000000002';
+// One line of messages.jsonl, as the program writes it.
+const line = (t, values, vin = VIN_A) => JSON.stringify({ t, payload: JSON.stringify({ vin, data: msg(values) }) });
+const tempDir = () => mkdtempSync(join(tmpdir(), 'mini-watch-test-'));
 
-// Short times so the tests run fast. ntfy_topic is empty, so a notification goes to the log.
-const baseConfig = { ...DEFAULT_CONFIG, language: 'en', timezone: 'UTC', alert_after_min: 0.002, remind_every_min: 30, park_after_idle_min: 0.005, ntfy_topic: '' };
+// ntfy_topic is empty, so a notification goes to the log.
+const baseConfig = { ...DEFAULT_CONFIG, language: 'en', timezone: 'UTC', ntfy_topic: '' };
 
 async function logsDuring(fn) {
   const lines = [];
@@ -31,69 +52,77 @@ async function logsDuring(fn) {
   return lines;
 }
 
+// A watcher with a virtual clock. Times in these tests are in minutes.
+function virtualWatcher(cfg = {}) {
+  const box = { clock: 0 };
+  const watcher = new Watcher({ ...DEFAULT_CONFIG, timezone: 'UTC', ...cfg }, { clock: () => box.clock, random: () => 0.5 });
+  const at = (minute) => {
+    box.clock = minute * 60;
+    return box.clock;
+  };
+  return { watcher, at };
+}
+
 test('no notification while driving, one combined notification after the driver leaves', async () => {
-  const watcher = new Watcher(baseConfig);
-  watcher.onData(msg({ [KM]: 100, [TILT]: 'OPEN' }));
-  watcher.onData(msg({ [WIN]: 'INTERMEDIATE' }));
-  watcher.onData(msg({ [KM]: 101 }));
-  await wait(200);
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [KM]: 100, [TILT]: 'OPEN' }), at(0));
+  watcher.onData(msg({ [WIN]: 'INTERMEDIATE' }), at(1));
+  watcher.onData(msg({ [KM]: 101 }), at(3));
+  at(14);
   assert.deepEqual(await logsDuring(() => watcher.check()), [], 'driving: silent');
 
-  watcher.onData(msg({ [DRIVER_DOOR]: true })); // the driver leaves the car
-  await wait(200);
+  watcher.onData(msg({ [DRIVER_DOOR]: true }), at(15)); // the driver leaves the car
+  at(25);
   const lines = await logsDuring(() => watcher.check());
   assert.equal(lines.length, 1, 'one combined notification');
   // The driver door is still open, so it is in the list too. The oldest open part comes first.
-  assert.match(
-    lines[0],
-    /MINI left open: Open: sunroof \(tilted\) since \d\d:\d\d, front right window since \d\d:\d\d, front left door since \d\d:\d\d/,
-  );
+  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\) since 00:00, front right window since 00:01, front left door since 00:15/);
 });
 
 test('a new drive resets the notification memory', async () => {
-  const watcher = new Watcher(baseConfig);
-  watcher.onData(msg({ [KM]: 100, [TILT]: 'OPEN' }));
-  watcher.onData(msg({ [KM]: 101 }));
-  watcher.onData(msg({ [DRIVER_DOOR]: true }));
-  await wait(200);
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [KM]: 100, [TILT]: 'OPEN' }), at(0));
+  watcher.onData(msg({ [KM]: 101 }), at(3));
+  watcher.onData(msg({ [DRIVER_DOOR]: true }), at(4));
+  at(14);
   assert.equal((await logsDuring(() => watcher.check())).length, 1);
   assert.equal((await logsDuring(() => watcher.check())).length, 0, 'no repeat');
-  watcher.onData(msg({ [KM]: 102 })); // the car drives again
-  watcher.onData(msg({ [DRIVER_DOOR]: true }));
-  await wait(200);
+  watcher.onData(msg({ [KM]: 102 }), at(20)); // the car drives again
+  watcher.onData(msg({ [DRIVER_DOOR]: true }), at(21));
+  at(31);
   assert.equal((await logsDuring(() => watcher.check())).length, 1, 'new park, new notification');
 });
 
 test('the car counts as parked when the odometer stays still', async () => {
-  const watcher = new Watcher(baseConfig);
-  watcher.onData(msg({ [KM]: 100, [WIN]: 'OPEN' }));
-  watcher.onData(msg({ [KM]: 101 }));
-  await wait(150);
-  assert.equal((await logsDuring(() => watcher.check())).length, 0, 'the odometer rose a moment ago');
-  await wait(250);
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [KM]: 100, [WIN]: 'OPEN' }), at(0));
+  watcher.onData(msg({ [KM]: 101 }), at(3));
+  at(32);
+  assert.equal((await logsDuring(() => watcher.check())).length, 0, 'the odometer rose 29 minutes ago');
+  at(34);
   assert.equal((await logsDuring(() => watcher.check())).length, 1, 'idle time is over');
 });
 
 test('without odometer data a part that stays open triggers a notification', async () => {
-  const watcher = new Watcher(baseConfig);
-  watcher.onData(msg({ [WIN]: 'OPEN' }));
-  await wait(200);
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [WIN]: 'OPEN' }), at(0));
+  at(10);
   assert.equal((await logsDuring(() => watcher.check())).length, 1);
 });
 
 test('ignition data stops notifications while the ignition is on', async () => {
-  const watcher = new Watcher(baseConfig);
-  watcher.onData(msg({ [WIN]: 'OPEN', [IGNITION]: true }));
-  await wait(200);
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [WIN]: 'OPEN', [IGNITION]: true }), at(0));
+  at(30);
   assert.equal((await logsDuring(() => watcher.check())).length, 0);
 });
 
 test('"everything is closed" goes out once after an alert', async () => {
-  const watcher = new Watcher(baseConfig);
-  watcher.onData(msg({ [WIN]: 'OPEN' }));
-  await wait(200);
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [WIN]: 'OPEN' }), at(0));
+  at(10);
   await logsDuring(() => watcher.check());
-  watcher.onData(msg({ [WIN]: 'CLOSED' }));
+  watcher.onData(msg({ [WIN]: 'CLOSED' }), at(11));
   const lines = await logsDuring(() => watcher.check());
   assert.equal(lines.length, 1);
   assert.match(lines[0], /MINI: Everything is closed\./);
@@ -101,22 +130,22 @@ test('"everything is closed" goes out once after an alert', async () => {
 });
 
 test('missing data after a restart does not count as closed', async () => {
-  const watcher = new Watcher(baseConfig);
+  const { watcher, at } = virtualWatcher();
   watcher.alerted = true; // state loaded from disk: an alert went out before the restart
   assert.equal((await logsDuring(() => watcher.check())).length, 0, 'no data yet, no "closed" message');
-  watcher.onData(msg({ [WIN]: 'OPEN' }));
-  watcher.onData(msg({ [WIN]: 'CLOSED' })); // now the program sees a real close
+  watcher.onData(msg({ [WIN]: 'OPEN' }), at(1));
+  watcher.onData(msg({ [WIN]: 'CLOSED' }), at(2)); // now the program sees a real close
   const lines = await logsDuring(() => watcher.check());
   assert.equal(lines.length, 1);
   assert.match(lines[0], /Everything is closed\./);
 });
 
 test('Turkish text with language "tr"', async () => {
-  const watcher = new Watcher({ ...baseConfig, language: 'tr' });
-  watcher.onData(msg({ [WIN]: 'OPEN', [TILT]: 'OPEN' }));
-  await wait(200);
+  const { watcher, at } = virtualWatcher({ language: 'tr' });
+  watcher.onData(msg({ [WIN]: 'OPEN', [TILT]: 'OPEN' }), at(0));
+  at(10);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /MINI açık kaldı: Açık: sağ ön cam \d\d:\d\d'(den|dan|ten|tan) beri, cam tavan \(aralık\) \d\d:\d\d'(den|dan|ten|tan) beri/);
+  assert.match(lines[0], /MINI açık kaldı: Açık: sağ ön cam 00:00'dan beri, cam tavan \(aralık\) 00:00'dan beri/);
 });
 
 test('label names the part in both languages', () => {
@@ -304,7 +333,7 @@ const ntfyConfig = { ...DEFAULT_CONFIG, timezone: 'UTC', alert_after_min: 0, ntf
 
 test('a failed notification is sent again later and the state waits for success', async () => {
   let clock = 1000;
-  const watcher = new Watcher(ntfyConfig, { clock: () => clock });
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock, random: () => 0.5 });
   watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
   const calls = await withFakeNtfy([500, 'throw', 200], async () => {
     await watcher.check(); // HTTP 500
@@ -327,7 +356,7 @@ test('a failed notification is sent again later and the state waits for success'
 
 test('no "everything is closed" when the alert never reached the phone', async () => {
   let clock = 1000;
-  const watcher = new Watcher(ntfyConfig, { clock: () => clock });
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock, random: () => 0.5 });
   watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
   const calls = await withFakeNtfy(['throw', 200], async () => {
     await watcher.check(); // the alert fails
@@ -340,7 +369,7 @@ test('no "everything is closed" when the alert never reached the phone', async (
 
 test('"everything is closed" is sent again when it fails', async () => {
   let clock = 1000;
-  const watcher = new Watcher(ntfyConfig, { clock: () => clock });
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock, random: () => 0.5 });
   watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
   const calls = await withFakeNtfy([200, 503, 200], async () => {
     await watcher.check(); // alert sent
@@ -405,7 +434,6 @@ test('checkConfig refuses a bad number of minutes', () => {
 
 test('the history replay skips broken lines and keeps the others', async () => {
   const clock = 100_000;
-  const line = (t, values) => JSON.stringify({ t, payload: JSON.stringify({ data: msg(values) }) });
   const file = join(mkdtempSync(join(tmpdir(), 'mini-watch-test-')), 'messages.jsonl');
   writeFileSync(
     file,
@@ -417,13 +445,201 @@ test('the history replay skips broken lines and keeps the others', async () => {
       '{"t": 99',
     ].join('\n'),
   );
-  const watcher = new Watcher(baseConfig, { clock: () => clock });
+  const fleet = new Fleet(baseConfig, { clock: () => clock });
   let result;
-  await logsDuring(() => {
-    result = replayRecent(watcher, file);
+  await logsDuring(async () => {
+    result = await replayRecent(fleet, [file]);
   });
   assert.deepEqual(result, { count: 2, broken: 2 });
+  const watcher = fleet.watcher(VIN_A);
   assert.equal(watcher.openSince.has(WIN), true);
   assert.equal(watcher.openSince.has(TILT), false);
   assert.equal(watcher.lastKm, 100);
+});
+
+// ---- More cars, restarts, history files, tokens, silence and doctor (findings F-02, F-05, F-06, F-07, F-08, F-13, F-14) ----
+
+test('two cars: the parts do not mix and the title names the car', async () => {
+  let clock = 0;
+  const fleet = new Fleet({ ...baseConfig, vehicle_names: { [VIN_A]: 'Countryman' } }, { clock: () => clock, random: () => 0.5 });
+  fleet.onMessage(VIN_A, msg({ [WIN]: 'OPEN' }), 0);
+  fleet.onMessage(VIN_B, msg({ [WIN]: 'CLOSED', [TILT]: 'OPEN' }), 60);
+  assert.equal(fleet.watcher(VIN_A).openSince.has(WIN), true, 'a close of car B does not close car A');
+  fleet.onMessage(VIN_B, msg({ [KM]: 5 }), 61);
+  fleet.onMessage(VIN_B, msg({ [KM]: 6 }), 120); // car B drives
+  clock = 11 * 60;
+  const lines = await logsDuring(() => fleet.check());
+  assert.equal(lines.length, 1, 'car B drives: only car A sends');
+  assert.match(lines[0], /MINI left open \(Countryman\): Open: front right window/);
+  clock = 60 * 60; // car B is parked now
+  const later = await logsDuring(() => fleet.check());
+  assert.equal(later.length, 1);
+  assert.match(later[0], /MINI left open \(…0002\): Open: sunroof \(tilted\)/);
+});
+
+test('a restart keeps a part that is open for more than 24 hours, without a new alert', async () => {
+  const dir = tempDir();
+  const stateFile = join(dir, 'state.json');
+  const historyFile = join(dir, 'messages.jsonl');
+  const opened = 1_000_000;
+  let clock = opened;
+  const first = new Fleet(baseConfig, { clock: () => clock, stateFile, random: () => 0.5 });
+  first.onMessage(VIN_A, msg({ [TILT]: 'OPEN' }), opened);
+  writeFileSync(historyFile, `${line(opened, { [TILT]: 'OPEN' })}\n`);
+  clock = opened + 30 * 3600; // the open message is now older than the 24 hour replay
+  assert.equal((await logsDuring(() => first.check())).length, 1, 'the alert');
+  clock += 60; // restart one minute later
+  const second = new Fleet(baseConfig, { clock: () => clock, stateFile });
+  assert.equal(second.loadSnapshot(), true);
+  await logsDuring(() => replayRecent(second, [historyFile]));
+  assert.deepEqual(second.loadNotifyState(), [VIN_A]);
+  assert.equal(second.watcher(VIN_A).openSince.get(TILT), opened, 'the original time stays');
+  assert.equal((await logsDuring(() => second.check())).length, 0, 'no repeated alert');
+});
+
+test('a saved state older than 24 hours is not used', () => {
+  const dir = tempDir();
+  const stateFile = join(dir, 'state.json');
+  const clock = 1_000_000;
+  const snap = { openSince: [[TILT, 1]], notified: [TILT], lastNotify: 1, reminders: 0, alerted: true, sawClose: false };
+  writeFileSync(stateFile, JSON.stringify({ version: 2, savedAt: clock - 25 * 3600, vehicles: { [VIN_A]: snap } }));
+  const fleet = new Fleet(baseConfig, { clock: () => clock, stateFile });
+  assert.equal(fleet.loadSnapshot(), false);
+  assert.deepEqual(fleet.loadNotifyState(), []);
+  assert.equal(fleet.watchers.size, 0);
+});
+
+test('"everything is closed" survives a restart when ntfy failed before the restart', async () => {
+  const dir = tempDir();
+  const stateFile = join(dir, 'state.json');
+  let clock = 0;
+  const first = new Fleet(ntfyConfig, { clock: () => clock, stateFile, random: () => 0.5 });
+  first.onMessage(VIN_A, msg({ [WIN]: 'OPEN' }), 0);
+  clock = 600;
+  await withFakeNtfy([200, 500], async () => {
+    await first.check(); // the alert is sent
+    first.onMessage(VIN_A, msg({ [WIN]: 'CLOSED' }), 610);
+    clock = 620;
+    await first.check(); // "closed" fails
+  });
+  first.save(true); // the service stops
+  clock = 700;
+  const second = new Fleet(ntfyConfig, { clock: () => clock, stateFile, random: () => 0.5 });
+  second.loadSnapshot();
+  await logsDuring(() => replayRecent(second, []));
+  second.loadNotifyState();
+  const calls = await withFakeNtfy([200], () => second.check());
+  assert.deepEqual(calls.map((call) => call.title), ['MINI']);
+});
+
+test('the state file of an older version loads for the only car', async () => {
+  const dir = tempDir();
+  const stateFile = join(dir, 'state.json');
+  const historyFile = join(dir, 'messages.jsonl');
+  const clock = 1_000_000;
+  writeFileSync(stateFile, JSON.stringify({ notified: [TILT], lastNotify: clock - 60, reminders: 1, alerted: true, savedAt: clock - 60 }));
+  writeFileSync(historyFile, `${line(clock - 3600, { [TILT]: 'OPEN' })}\n`);
+  const fleet = new Fleet(baseConfig, { clock: () => clock, stateFile });
+  assert.equal(fleet.loadSnapshot(), false, 'no snapshot in version 1');
+  await logsDuring(() => replayRecent(fleet, [historyFile]));
+  assert.deepEqual(fleet.loadNotifyState(), [VIN_A]);
+  assert.deepEqual([...fleet.watcher(VIN_A).notified], [TILT]);
+  assert.equal(fleet.watcher(VIN_A).reminders, 1);
+});
+
+test('the history file moves to .1 when it is full, and the replay reads both files', async () => {
+  const file = join(tempDir(), 'messages.jsonl');
+  const clock = 100_000;
+  const raw = (km) => JSON.stringify({ vin: VIN_A, data: msg({ [KM]: km }) });
+  const lineBytes = Buffer.byteLength(`${JSON.stringify({ t: clock, payload: raw(100) })}\n`);
+  const history = new History(file, Math.floor(lineBytes * 2.5));
+  await logsDuring(() => {
+    for (let i = 0; i < 4; i += 1) history.append(raw(100 + i), clock - 100 + i);
+  });
+  assert.equal(existsSync(`${file}.1`), true);
+  assert.equal(readFileSync(`${file}.1`, 'utf8').trim().split('\n').length, 2);
+  assert.ok(statSync(file).size <= lineBytes * 2.5);
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  const fleet = new Fleet(baseConfig, { clock: () => clock });
+  let result;
+  await logsDuring(async () => {
+    result = await replayRecent(fleet, [`${file}.1`, file]);
+  });
+  assert.equal(result.count, 4);
+  assert.equal(fleet.watcher(VIN_A).lastKm, 103);
+});
+
+test('a stream message: VIN from the payload or the topic, size limit, broken JSON', () => {
+  const fromTopic = parseStreamMessage(`gcid/${VIN_B}`, Buffer.from(JSON.stringify({ data: msg({ [WIN]: 'OPEN' }) })));
+  assert.equal(fromTopic.vin, VIN_B);
+  assert.deepEqual(fromTopic.data, msg({ [WIN]: 'OPEN' }));
+  assert.equal(parseStreamMessage('gcid/x', Buffer.from(JSON.stringify({ vin: VIN_A, data: {} }))).vin, VIN_A);
+  const big = parseStreamMessage('gcid/x', Buffer.alloc(70 * 1024, 32));
+  assert.ok(big.error && !big.raw, 'too large: not stored');
+  const broken = parseStreamMessage('gcid/x', Buffer.from('{oops'));
+  assert.equal(broken.error, 'not JSON');
+  assert.equal(broken.raw, '{oops', 'broken JSON is stored for analysis');
+});
+
+test('tokens: a refresh without a new refresh token keeps the old one, the access token is not kept', () => {
+  const old = { refresh_token: 'old-refresh', gcid: 'old-gcid' };
+  const refreshed = tokenRecord({ id_token: 'new-id', access_token: 'not-used', expires_in: 3600 }, old, 1000);
+  assert.deepEqual(refreshed, { refresh_token: 'old-refresh', id_token: 'new-id', gcid: 'old-gcid', id_expires_at: 4600 });
+  const login = tokenRecord({ id_token: 'a', refresh_token: 'b', gcid: 'c' }, {}, 0);
+  assert.deepEqual(login, { refresh_token: 'b', id_token: 'a', gcid: 'c', id_expires_at: 3600 });
+});
+
+test('readBody refuses an answer larger than the limit', async () => {
+  assert.equal(await readBody(new Response('small'), 10), 'small');
+  await assert.rejects(readBody(new Response('x'.repeat(100)), 10), /larger than 10 bytes/);
+});
+
+test('silence alert: one notification after the set time without data, again only after new data', async () => {
+  let clock = 0;
+  const fleet = new Fleet({ ...baseConfig, silence_alert_hours: 48 }, { clock: () => clock });
+  fleet.onMessage(VIN_A, msg({ [WIN]: 'CLOSED' }), 0);
+  clock = 47 * 3600;
+  assert.equal((await logsDuring(() => fleet.check())).length, 0);
+  clock = 49 * 3600;
+  const lines = await logsDuring(() => fleet.check());
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /MINI no data: No data from the car for 48 hours/);
+  clock = 60 * 3600;
+  assert.equal((await logsDuring(() => fleet.check())).length, 0, 'only once');
+  fleet.onMessage(VIN_A, msg({ [WIN]: 'CLOSED' }), clock);
+  clock += 49 * 3600;
+  assert.equal((await logsDuring(() => fleet.check())).length, 1, 'again after new data and a new silence');
+
+  const off = new Fleet(baseConfig, { clock: () => clock });
+  off.onMessage(VIN_A, msg({ [WIN]: 'CLOSED' }), 0);
+  assert.equal((await logsDuring(() => off.check())).length, 0, 'off by default');
+});
+
+test('checkConfig checks silence_alert_hours, vehicle_names and ntfy_server', () => {
+  checkConfig({ ...DEFAULT_CONFIG, silence_alert_hours: 48, vehicle_names: { [VIN_A]: 'Countryman' } });
+  for (const [key, value] of [
+    ['silence_alert_hours', -1],
+    ['silence_alert_hours', '48'],
+    ['vehicle_names', []],
+    ['vehicle_names', { [VIN_A]: 1 }],
+    ['ntfy_server', 'ntfy.sh'],
+  ]) {
+    assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, [key]: value }), new RegExp(key), `${key}=${JSON.stringify(value)}`);
+  }
+});
+
+test('doctor --offline checks the files and finds a missing login', () => {
+  const dir = tempDir();
+  const script = fileURLToPath(new URL('../mini_watch.mjs', import.meta.url));
+  const doctor = () => spawnSync(process.execPath, [script, 'doctor', '--offline'], { env: { ...process.env, MINI_WATCH_DATA: dir }, encoding: 'utf8' });
+  const config = { client_id: '1a2b3c4d-1111-2222-3333-444455556666', ntfy_topic: 'mini-0123456789abcdef01' };
+  writeFileSync(join(dir, 'config.json'), JSON.stringify(config), { mode: 0o600 });
+  const first = doctor();
+  assert.equal(first.status, 1, first.stdout);
+  assert.match(first.stdout, /^OK {3}config\.json is valid\./m);
+  assert.match(first.stdout, /^FAIL .*tokens\.json not found/m);
+  writeFileSync(join(dir, 'tokens.json'), JSON.stringify({ refresh_token: 'r', id_token: 'i', gcid: 'g', id_expires_at: 0 }), { mode: 0o600 });
+  const second = doctor();
+  assert.equal(second.status, 0, second.stdout);
+  assert.match(second.stdout, /^OK {3}tokens\.json is complete/m);
 });

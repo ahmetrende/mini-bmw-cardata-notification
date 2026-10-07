@@ -19,6 +19,7 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
 | Restart | `sudo systemctl restart mini-watch` |
 | Stop | `sudo systemctl stop mini-watch` |
 | Test notification | `sudo mini-watch ntfy-test` |
+| Check the setup (sends nothing) | `sudo mini-watch doctor` |
 
 To watch the log from your computer with one command:
 
@@ -39,6 +40,8 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 | `Could not refresh the token ...` | You must log in again. See below. |
 | `Notification failed: ...` | ntfy was not reachable. The program tries again after 30 seconds, then waits longer each time, up to 10 minutes. If the line repeats, check the topic name and the network. |
 | `Subscribe error: ... Reconnecting.` | The stream refused the subscription. The program connects again. If the line repeats, make sure that **CarData Stream** is on in the portal. |
+| `The history file is full. ...` | `messages.jsonl` reached 10 MB and became `messages.jsonl.1`. This is normal. |
+| `A stream message was skipped: ...` | The message was too large (more than 64 KB). The program did not store it. |
 | `Unknown value "..." for ...` | The car sent a value that the program does not know. The part keeps its last state. Please open an issue and add this line. |
 | `Set "ntfy_topic" ...` or `"..." must be a number of minutes ...` | The program did not start. A value in `config.json` is wrong. Correct it and restart the service. |
 
@@ -57,6 +60,8 @@ sudo systemctl restart mini-watch
 | `remind_every_min` | 60 | First reminder time when a part is still open. Each next reminder waits twice as long. |
 | `remind_max_min` | 480 | Longest time between two reminders |
 | `park_after_idle_min` | 30 | The car counts as parked when the odometer is still for this time |
+| `silence_alert_hours` | 0 (off) | One notification when the car sends no data for this many hours. The car sends nothing while it sleeps, so a long parked time also gives this notification. |
+| `vehicle_names` | `{}` | Names for the cars of an account with more than one car. Example: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | The address of your own ntfy server |
 
 ## Update the program
@@ -70,7 +75,20 @@ git pull
 sudo bash deploy/install.sh
 ```
 
-The script does not change `config.json` or `tokens.json`. It restarts the service if the service runs. An older install kept the data in `/opt/mini-watch`. The script moves the data to `/var/lib/mini-watch` one time. The old `run.log` becomes `/var/lib/mini-watch/run-before-journal.log`.
+The script does these steps:
+
+1. It installs the new version in a new folder in `/opt/mini-watch/releases`. The running service does not use it yet.
+2. It checks the new version with your settings (`doctor --offline`). If a check fails, nothing changes.
+3. It switches to the new version and restarts the service.
+4. It waits up to 2 minutes for `Subscribed`. If the line does not come, it goes back to the version before.
+
+The script does not change `config.json` or `tokens.json`. It keeps the 3 newest versions. An older install kept the code and the data in `/opt/mini-watch`. The script moves them one time. The old `run.log` becomes `/var/lib/mini-watch/run-before-journal.log`.
+
+To go back to the version before by hand:
+
+```bash
+sudo bash deploy/install.sh --rollback
+```
 
 ## Log in again
 
@@ -98,6 +116,7 @@ For the login steps, see [Step 3](04-server-setup.md), part 7.
 | Many `Reconnecting` lines | The program runs in another place with the same account. | Stop the other copy. The account allows one connection. |
 | A notification comes while you drive | The stream has no `travelledDistance`. | Add that attribute in the portal. |
 | No notification for a tilted sunroof | The stream has no `tiltStatus`. | Add that attribute in the portal. |
+| The time in the notification is wrong | `timezone` is empty or wrong. | Write your time zone in `config.json`. Example: `Europe/Istanbul`. |
 | The log shows "Notification sent", but the phone shows nothing | No subscription, or notifications are off. | Check the topic name and the phone permissions in the ntfy app. |
 | SSH shows "Connection timed out" | The `--tunnel-through-iap` flag is missing. | Add the flag. The server accepts only the IAP tunnel. |
 
@@ -113,13 +132,7 @@ Do not use the **Reset** button in the console. Do not use `gcloud compute insta
 
 ## Disk use
 
-The system journal limits the size of the log. `messages.jsonl` grows all the time. It uses a few MB each day. A 30 GB disk lasts for years. To make it smaller:
-
-```bash
-sudo systemctl stop mini-watch
-sudo -u miniwatch sh -c 'cd /var/lib/mini-watch && umask 077 && tail -n 5000 messages.jsonl > m.tmp && mv m.tmp messages.jsonl'
-sudo systemctl start mini-watch
-```
+The system journal limits the size of the log. The program limits the message history to two files of 10 MB. You do not need to clean anything. To see the free space, run `sudo mini-watch doctor`.
 
 ## Delete everything
 

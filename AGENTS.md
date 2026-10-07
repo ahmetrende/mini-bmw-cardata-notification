@@ -38,7 +38,8 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Install | `sudo bash deploy/install.sh` ends with "Install done." |
 | Login | The log line "Login done. Granted scope:" has `cardata:streaming:read`. |
 | Service | The log shows "Connected to the stream." and "Subscribed: qos0". |
-| Notification | `ntfy-test` puts a message on the phone. |
+| Notification | `sudo mini-watch ntfy-test` puts a message on the phone. |
+| Whole setup | `sudo mini-watch doctor` shows no `FAIL` line. It sends nothing. |
 | Car | After the car sends data, the log shows `Message: vehicle...` lines. |
 
 ## Known traps
@@ -52,12 +53,13 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **macOS system Python cannot connect to the stream.** The broker needs TLS 1.3. This project uses Node 22 or newer.
 - **A restart can send a wrong notification.** After a restart, an empty list of open parts can mean "no data yet". The program handles this. Still, before you restart a running server, do a dry run (see below).
 - **The car sends data only when something changes.** An asleep car sends nothing. A remote light signal or an open and close of a door wakes the data.
-- **Server paths.** The code is in `/opt/mini-watch` and belongs to root. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. Use `sudo mini-watch login` and `sudo mini-watch ntfy-test`. Do not start a second copy with `run`.
+- **Server paths.** The code is in `/opt/mini-watch/releases/<date>-<commit>` and belongs to root. `/opt/mini-watch/current` points to the release in use. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. Use `sudo mini-watch login`, `sudo mini-watch ntfy-test` and `sudo mini-watch doctor`. Do not start a second copy with `run`.
+- **Update and rollback.** `sudo bash deploy/install.sh` checks the new release, switches, and waits for `Subscribed`. Without it, the script goes back to the release before. `sudo bash deploy/install.sh --rollback` goes back by hand.
 - **The tested car (MINI Countryman E, U25) sends no ignition, motion, speed or door lock data.** Do not promise these features. Another car can differ.
 
 ## Change the code
 
-1. Run `npm ci` and `npm test`. All tests must pass. The tests use fake data and need no account.
+1. Run `npm ci` and `npm test`. All tests must pass. The tests use fake data and need no account. GitHub Actions runs the same tests for each push (`.github/workflows/test.yml`). `test/docs.test.mjs` fails when the English and Turkish guides have a different structure.
 2. Keep comments and log lines in English. Notification text lives in the `TEXT` table in `mini_watch.mjs`. Add each new text in both languages (`en` and `tr`).
 3. Docs: English follows ASD-STE100 (short sentences, one instruction in each sentence, no semicolons, active voice). Turkish uses plain, natural technical Turkish. Change both languages together. Keep the two guides equal in content.
 4. Do not add personal data to the repository: no real Client ID, topic name, VIN, IP address, project name, e-mail address or token. Use placeholders such as `1a2b3c4d-1111-2222-3333-444455556666`.

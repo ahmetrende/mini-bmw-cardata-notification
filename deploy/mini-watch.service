@@ -11,10 +11,14 @@ Group=miniwatch
 StateDirectory=mini-watch
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/mini-watch
-ExecStart=/usr/local/bin/node /opt/mini-watch/mini_watch.mjs run
+# install.sh replaces /opt/mini-watch/current/ with the real path of the release.
+ExecStart=/usr/local/bin/node /opt/mini-watch/current/mini_watch.mjs run
 # BMW limits many connection attempts in a short time. After a crash, wait 30 seconds.
 Restart=always
 RestartSec=30
+# The program sends "WATCHDOG=1" while its main loop runs. Without it for 90 seconds, systemd restarts the service.
+WatchdogSec=90
+NotifyAccess=all
 # The log goes to the system journal. Read it with: journalctl -u mini-watch
 
 # Limits. The program can write only to /var/lib/mini-watch. New files are private (0600).

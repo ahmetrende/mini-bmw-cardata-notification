@@ -50,20 +50,24 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 | Kilometre bu kadar durursa araç park sayılır | 30 dakika | `park_after_idle_min` |
 | Bildirim metninin dili | `en` | `language` (`en` veya `tr`) |
 | Bildirimdeki saatlerin saat dilimi | sunucunun saat dilimi | `timezone` (örnek: `Europe/Istanbul`) |
+| Araçtan veri gelmezse bildirim | kapalı | `silence_alert_hours` (örnek: `72`) |
 
 - **Neden 10 dakika?** Sürücü kapısı biniş sırasında da açılır. Test aracında ilk kilometre verisi, binişten 3 ile 7 dakika sonra geldi. 10 dakikalık bekleme bu süreyi karşılar. Sayaç, sürücü kapısı her açıldığında baştan başlar.
 - **Hatırlatmalar.** Her hatırlatma bir öncekinin iki katı bekler: 1 saat, 2 saat, 4 saat, sonra 8 saat. Gece boyunca açık kalan bir parça saat başı bildirim yollamaz.
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. En eski açılan parça başta durur.
-- **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa son 24 saatin mesajlarını yeniden okur ve o dönemin gerçek saatlerini korur. 24 saatten uzun süredir açık kalan bir parçanın saati, okumanın başladığı an olarak görünür.
+- **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa bu saatleri korur. `state.json` dosyasını ve son 24 saatin mesajlarını okur. Program 24 saatten uzun kapalı kaldıysa, daha uzun süredir açık olan bir parçanın saati okumanın başladığı an olarak görünür.
 - **Yeni bir parça açılırsa.** Bekleme süresi dolunca yeni bir bildirim düşer. Bu bildirim de tüm açık parçaları sıralar.
 - **Hepsini kapatırsan.** Tek bir mesaj gelir ve her şeyin kapandığını söyler. Bu mesaj, daha önce bir bildirim gelmişse gelir. Program bu mesajı yalnızca bir parçanın kapandığını gördüğünde yollar. Veri gelmemesi "kapandı" anlamına gelmez. Yalnızca `CLOSED` ve `false` değerleri kapalı sayılır. Bilinmeyen bir değer durumu değiştirmez.
 - **Yeniden yola çıkarsan.** Program eski bildirimi unutur. Bir sonraki parkta yeni bir bildirim gelebilir.
+- **Birden fazla araç.** Akış, hesaptaki tüm araçların mesajlarını yollar. Program her aracı ayrı izler. Başlıkta aracın adı yazar: `vehicle_names` içindeki ad ya da VIN'in son 4 karakteri. Örnek: "MINI açık kaldı (Countryman)".
 
 ## Bir şey ters giderse ne olur?
 
 - **Token yenileme.** Akış parolası (ID token) 1 saat geçerli. Program parolayı süresi dolmadan 5 dakika önce yeniler. Yenileme anahtarı 2 hafta geçerli ve her yenilemede süresi uzar. Sunucu 2 haftadan uzun kapalı kalırsa yeniden giriş yapman gerekir.
 - **Bağlantı kopması.** Sağlıklı bir bağlantı kapanırsa program 5 saniye sonra yeniden bağlanır. Bağlantı art arda kısa sürede koparsa bekleme süresi 60 saniyeye kadar ikiye katlanır. BMW, kısa sürede çok sayıda bağlantı denemesini sınırlar.
-- **Yeniden başlama.** Program son 24 saatin mesajlarını yeniden okur. Kilometre ve kapı geçmişi kaybolmaz. Yolladığı bildirimleri `state.json` dosyasına yazar. Aynı bildirim ikinci kez gitmez. Geçmişteki bozuk bir satırı atlar.
+- **Yeniden başlama.** Program açık parçaları, kilometreyi ve yolladığı bildirimleri `state.json` dosyasına yazar. Bildirimden hemen sonra, diğer durumlarda en çok dakikada bir yazar. Açılışta `state.json` dosyasını ve son 24 saatin mesajlarını okur. Aynı bildirim ikinci kez gitmez. Geçmişteki bozuk bir satırı atlar.
+- **Geçmiş dosyası.** `messages.jsonl` 10 MB'a kadar büyür. Sonra `messages.jsonl.1` olur ve yeni bir dosya başlar. Program en çok iki dosya tutar. 64 KB'tan büyük bir mesaj kaydedilmez.
+- **Takılan program.** Program 30 saniyede bir systemd'ye çalıştığını bildirir (watchdog). Ana döngüsü 10 dakika durursa systemd servisi yeniden başlatır.
 - **ntfy'ye ulaşılamazsa.** Program bildirimi gönderilmiş saymaz. 30 saniye sonra yeniden dener. Her yeni deneme bir öncekinin iki katı bekler, en çok 10 dakika.
 - **Abonelik hatası.** Akış aboneliği reddederse program bağlantıyı kapatır ve yeniden bağlanır.
 - **Her mesajda tam durum.** Araç, seçtiğin tüm öznitelikleri her mesajda yollar. Kaybolan bir mesaj, bir durumu uzun süre gizlemez.
@@ -77,7 +81,7 @@ Program yalnızca kapıları, camları, cam tavanı, bagajı ve kaputu izliyor. 
 | Öğe | Değer |
 |---|---|
 | Giriş | PKCE'li OAuth 2.0 Device Code Flow, `customer.bmwgroup.com/gcdm/oauth` |
-| Kapsamlar | `authenticate_user openid cardata:streaming:read cardata:api:read` |
+| Kapsamlar | `authenticate_user openid cardata:streaming:read cardata:api:read`. BMW'nin rehberi iki CarData kapsamını da istiyor. Program yalnızca akışı kullanır ve erişim token'ını saklamaz. Yalnız akış kapsamıyla giriş denenmedi. |
 | Akış | MQTT 3.1.1, `customer.streaming-cardata.bmwgroup.com:9000`, TLS 1.3 şart |
 | MQTT kullanıcı adı ve parolası | GCID ve ID token |
 | Konu | `<GCID>/+` (hesaptaki tüm araçlar) |

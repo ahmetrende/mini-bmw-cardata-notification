@@ -5,8 +5,9 @@
 //
 //   node tools/replay.mjs messages.jsonl [config.json] [--hours 24]
 // On the server the file is /var/lib/mini-watch/messages.jsonl. Copy it to another computer first.
-import { readFileSync } from 'node:fs';
-import { DEFAULT_CONFIG, Watcher, formatTime } from '../mini_watch.mjs';
+// If messages.jsonl.1 (the older history file) is next to it, the tool reads it too.
+import { existsSync, readFileSync } from 'node:fs';
+import { DEFAULT_CONFIG, Fleet, formatTime, vinOf } from '../mini_watch.mjs';
 
 const args = process.argv.slice(2);
 const hoursFlag = args.indexOf('--hours');
@@ -22,13 +23,14 @@ const cfg = { ...DEFAULT_CONFIG, ...fileConfig, ntfy_topic: '' }; // empty topic
 const end = Date.now() / 1000;
 const start = end - hours * 3600;
 
-const messages = readFileSync(messagesFile, 'utf8')
-  .trim()
-  .split('\n')
+const messages = [`${messagesFile}.1`, messagesFile]
+  .filter(existsSync)
+  .flatMap((file) => readFileSync(file, 'utf8').split('\n'))
   .map((line) => {
     try {
       const msg = JSON.parse(line);
-      return { t: msg.t, data: JSON.parse(msg.payload).data ?? {} };
+      const payload = JSON.parse(msg.payload);
+      return { t: msg.t, vin: vinOf(payload), data: payload.data ?? {} };
     } catch {
       return null;
     }
@@ -37,7 +39,7 @@ const messages = readFileSync(messagesFile, 'utf8')
   .sort((a, b) => a.t - b.t);
 
 let clock = start;
-const watcher = new Watcher(cfg, { clock: () => clock });
+const fleet = new Fleet(cfg, { clock: () => clock });
 const realLog = console.log;
 let count = 0;
 // Notification lines start with "[ntfy off]". Other log lines show with "(log)" and do not count.
@@ -51,10 +53,10 @@ console.log = (...parts) => {
 let next = 0;
 for (clock = start; clock <= end; clock += 15) {
   while (next < messages.length && messages[next].t <= clock) {
-    watcher.onData(messages[next].data, messages[next].t);
+    fleet.onMessage(messages[next].vin, messages[next].data, messages[next].t);
     next += 1;
   }
-  await watcher.check();
+  await fleet.check();
 }
 console.log = realLog;
-console.log(`Replayed ${messages.length} messages of the last ${hours} hours. Notifications: ${count}.`);
+console.log(`Replayed ${messages.length} messages of the last ${hours} hours (${fleet.watchers.size} car). Notifications: ${count}.`);
