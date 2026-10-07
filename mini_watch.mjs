@@ -95,15 +95,25 @@ export function turkishFromSuffix(time) {
   return TR_FROM[trLastWord(minute === 0 ? hour : minute)];
 }
 
+// Intl.DateTimeFormat keeps native (ICU) memory outside the JavaScript heap. The garbage collector
+// sees this memory late. A new formatter for each call made memory grow to more than 600 MB in a
+// replay. So the program makes each formatter once and keeps it.
+const formatters = new Map();
+function formatter(locale, options) {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  if (!formatters.has(key)) formatters.set(key, new Intl.DateTimeFormat(locale, options));
+  return formatters.get(key);
+}
+
 // "13:50" for today. "6 Oct 13:50" (or "6 Eki 13:50") for an earlier day. The time zone comes from config.timezone.
 export function formatTime(seconds, cfg, nowSeconds = Date.now() / 1000) {
   const timeZone = cfg.timezone || undefined;
   const locale = cfg.language === 'tr' ? 'tr-TR' : 'en-GB';
   const date = new Date(seconds * 1000);
-  const hm = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(date);
-  const day = (value) => new Intl.DateTimeFormat('en-CA', { timeZone }).format(value);
+  const hm = formatter('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(date);
+  const day = (value) => formatter('en-CA', { timeZone }).format(value);
   if (day(date) === day(new Date(nowSeconds * 1000))) return hm;
-  return `${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone }).format(date)} ${hm}`;
+  return `${formatter(locale, { day: 'numeric', month: 'short', timeZone }).format(date)} ${hm}`;
 }
 
 const log = (msg) => console.log(new Date().toTimeString().slice(0, 8), msg);
