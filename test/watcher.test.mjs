@@ -643,3 +643,19 @@ test('doctor --offline checks the files and finds a missing login', () => {
   assert.equal(second.status, 0, second.stdout);
   assert.match(second.stdout, /^OK {3}tokens\.json is complete/m);
 });
+
+test('with one car, state.json also has the fields of version 1 (for a rollback)', async () => {
+  const stateFile = join(tempDir(), 'state.json');
+  let clock = 0;
+  const fleet = new Fleet(baseConfig, { clock: () => clock, stateFile });
+  fleet.onMessage(VIN_A, msg({ [WIN]: 'OPEN' }), 0);
+  clock = 600;
+  await logsDuring(() => fleet.check());
+  const state = JSON.parse(readFileSync(stateFile, 'utf8'));
+  assert.equal(state.version, 2);
+  assert.deepEqual(state.notified, [WIN]);
+  assert.equal(state.lastNotify, 600);
+  assert.equal(state.alerted, true);
+  assert.equal(state.reminders, 0);
+  assert.equal(state.savedAt, 600);
+});

@@ -67,6 +67,13 @@ switch_to() {
   systemctl daemon-reload
 }
 
+# Keeps the newest releases. Never deletes the release in use or the release given as $1.
+cleanup_releases() {
+  find "$RELEASES" -mindepth 1 -maxdepth 1 -type d | sort | head -n -"$KEEP_RELEASES" | while read -r old; do
+    if [ "$old" != "$(current_release)" ] && [ "$old" != "${1:-}" ]; then rm -rf "$old"; fi
+  done
+}
+
 # True when the service subscribed to the stream after the time $1 (seconds since 1970).
 wait_healthy() {
   local deadline=$(($(date +%s) + HEALTH_WAIT_S))
@@ -197,14 +204,12 @@ if [ "$WAS_ACTIVE" = 1 ]; then
       systemctl restart mini-watch
       echo "Went back to the release $(basename "$BEFORE"). If BMW had a short problem, run the update again later." >&2
     fi
+    cleanup_releases "$REL"
     exit 1
   fi
 fi
 
-# Keep the newest releases. Never delete the release in use.
-find "$RELEASES" -mindepth 1 -maxdepth 1 -type d | sort | head -n -"$KEEP_RELEASES" | while read -r old; do
-  if [ "$old" != "$(current_release)" ]; then rm -rf "$old"; fi
-done
+cleanup_releases "$BEFORE"
 
 echo
 echo "Install done."

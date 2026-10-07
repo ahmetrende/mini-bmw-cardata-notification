@@ -678,6 +678,12 @@ export class Fleet {
       silenceAlerted: this.silenceAlerted,
       vehicles: Object.fromEntries([...this.watchers].map(([vin, watcher]) => [vin, watcher.snapshot()])),
     };
+    // With one car, also write the fields of version 1. After a rollback, an older release still
+    // finds its notification memory and does not repeat an alert.
+    if (watchers.length === 1) {
+      const { notified, lastNotify, reminders, alerted } = watchers[0].snapshot();
+      Object.assign(state, { notified, lastNotify, reminders, alerted });
+    }
     writeFileAtomic(this.stateFile, JSON.stringify(state));
     for (const watcher of watchers) watcher.dirty = watcher.urgent = false;
     this.dirty = false;
