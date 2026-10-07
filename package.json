@@ -11,7 +11,7 @@
     "login": "node mini_watch.mjs login",
     "start": "node mini_watch.mjs run",
     "ntfy-test": "node mini_watch.mjs ntfy-test",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "mqtt": "^5.16.0"
