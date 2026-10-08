@@ -674,12 +674,13 @@ export class Watcher {
         .map(([name]) => name),
     );
     this.notified = new Set([...this.notified].filter((name) => this.openSince.has(name))); // Forget closed parts.
-    // Back at the car: a door opened or the car was unlocked after the first notification of the series.
-    // The remaining reminders stop. A part that is still open gives a new series: 2 minutes after the car
-    // is locked again (RELOCK_WAIT_S), else after the normal wait.
-    if (this.notified.size && Math.max(this.lastDoorAt, this.lastUnlockAt) > this.firstNotifyAt) {
+    // Back at the car: a door opened after the first notification of the series. The remaining
+    // reminders stop. A part that is still open gives a new series: 2 minutes after the car is locked
+    // again (RELOCK_WAIT_S), else after the normal wait. An unlock and a lock without a door opening
+    // change nothing: a key button or a key near the car (for example at a valet) can do this many times.
+    if (this.notified.size && this.lastDoorAt > this.firstNotifyAt) {
       this.notified = new Set();
-      this.returnedAt = Math.max(this.lastDoorAt, this.lastUnlockAt);
+      this.returnedAt = this.lastDoorAt;
       this.urgent = true;
     }
     if (this.openSince.size === 0) {

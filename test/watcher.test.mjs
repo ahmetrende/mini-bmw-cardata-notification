@@ -827,10 +827,17 @@ test('back at the car without a new lock: a new series after the normal wait', a
   assert.deepEqual(sent.map(([m]) => m), [24, 50.5, 80.5, 140.5]);
 });
 
-test('back at the car after the last reminder: a new lock starts a new series', async () => {
-  const events = lockedTrip([[200, { [LOCK]: 'UNLOCKED' }], [201, { [LOCK]: 'SECURED' }]]);
+test('back at the car after the last reminder: a door and a new lock start a new series', async () => {
+  const events = lockedTrip([[200, { [LOCK]: 'UNLOCKED' }], [200.5, DOOR_OPEN], [200.75, DOOR_CLOSED], [201, { [LOCK]: 'SECURED' }]]);
   const sent = await simulate(events, 0, 400);
   assert.deepEqual(sent.map(([m]) => m), [24, 54, 114, 203, 233, 293]);
+});
+
+test('unlock and lock without a door opening change nothing (a key at a valet)', async () => {
+  const cycles = [];
+  for (const m of [30, 33, 40, 70, 100, 130]) cycles.push([m, { [LOCK]: 'UNLOCKED' }], [m + 0.25, { [LOCK]: 'SECURED' }]);
+  const sent = await simulate(lockedTrip(cycles), 0, 400);
+  assert.deepEqual(sent.map(([m]) => m), [24, 54, 114], 'only the first notification and the two reminders');
 });
 
 test('a door that stays open counts once, also when the car repeats it in each message', async () => {
