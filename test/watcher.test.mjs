@@ -209,7 +209,7 @@ test('Turkish time suffix follows the last spoken word', () => {
 });
 
 // ---- Scenarios from real drives, with a virtual clock. Times are in minutes. ----
-// The default config applies: wait 10 minutes after parking, idle limit 30 minutes, reminders 60 to 480 minutes.
+// The default config applies: wait 10 minutes after parking, idle limit 30 minutes, reminders after 30 and 90 minutes.
 
 const DOOR_OPEN = { [DRIVER_DOOR]: true };
 const DOOR_CLOSED = { [DRIVER_DOOR]: false };
@@ -299,12 +299,12 @@ test('real park: one notification 10 minutes after the driver door opens', async
   assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
 });
 
-test('reminders wait longer each time: 60, 120, 240, 480 minutes', async () => {
+test('reminders 30 and 90 minutes after the first notification, then no more', async () => {
   const events = [[0, { [KM]: 100, [TILT]: 'OPEN' }], [1, DOOR_OPEN], [1.1, DOOR_CLOSED]];
   const sent = await simulate(events, 0, 16 * 60);
   assert.deepEqual(
     sent.map(([minute]) => minute),
-    [11, 71, 191, 431, 911],
+    [11, 41, 101],
   );
   assert.match(sent[0][1], /MINI left open/);
   for (const [, text] of sent.slice(1)) assert.match(text, /MINI still open/);
@@ -424,10 +424,11 @@ test('checkConfig refuses a bad number of minutes', () => {
   checkConfig({ ...DEFAULT_CONFIG, alert_after_min: 0 });
   for (const [key, value] of [
     ['alert_after_min', -1],
-    ['remind_every_min', 0],
-    ['remind_every_min', '60'],
     ['park_after_idle_min', Number.NaN],
-    ['remind_max_min', 99999],
+    ['remind_after_min', 60],
+    ['remind_after_min', [90, 30]],
+    ['remind_after_min', [0]],
+    ['remind_after_min', ['30']],
   ]) {
     assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, [key]: value }), new RegExp(key), `${key}=${value}`);
   }
@@ -472,7 +473,7 @@ test('two cars: the parts do not mix and the title names the car', async () => {
   const lines = await logsDuring(() => fleet.check());
   assert.equal(lines.length, 1, 'car B drives: only car A sends');
   assert.match(lines[0], /MINI left open \(Countryman\): Open: front right window/);
-  clock = 60 * 60; // car B is parked now
+  clock = 40 * 60; // car B is parked now (car A's first reminder comes at 41)
   const later = await logsDuring(() => fleet.check());
   assert.equal(later.length, 1);
   assert.match(later[0], /MINI left open \(…0002\): Open: sunroof \(tilted\)/);
@@ -713,7 +714,7 @@ test('the text shows the start of the park for a part that was open since an ear
     [day + 22.2, DOOR_CLOSED],
     [day + 23, { [LOCK]: 'SECURED' }],
   ];
-  const sent = await simulate(events, day - 1, day + 30, { remind_every_min: 600 });
+  const sent = await simulate(events, day - 1, day + 30, { remind_after_min: [] });
   assert.equal(sent.length, 2, 'the alert of yesterday, then the alert of today');
   assert.match(sent[1][1], /MINI left open: Open: sunroof \(tilted\) since 00:23$/, 'not "since yesterday 00:00"');
 });
@@ -776,7 +777,23 @@ test('the text uses the time the driver got out when the lock comes hours later'
     [22.2, DOOR_CLOSED],
     [180, { [LOCK]: 'SECURED' }], // a lock with the app, hours later
   ];
-  const sent = await simulate(events, 0, 200, { remind_every_min: 600 });
+  const sent = await simulate(events, 0, 200, { remind_after_min: [] });
   assert.equal(sent.length, 1);
   assert.match(sent[0][1], /sunroof \(tilted\) since 00:22$/);
+});
+
+test('reminders: a custom list, an empty list, and a new part starts a new series', async () => {
+  const base = [[0, { [KM]: 100, [TILT]: 'OPEN' }], [1, DOOR_OPEN], [1.1, DOOR_CLOSED]];
+  assert.deepEqual((await simulate(base, 0, 300, { remind_after_min: [] })).map(([m]) => m), [11]);
+  assert.deepEqual((await simulate(base, 0, 300, { remind_after_min: [15, 60, 120] })).map(([m]) => m), [11, 26, 71, 131]);
+  const withNewPart = [...base, [50, { [WIN]: 'OPEN' }]];
+  const sent = await simulate(withNewPart, 0, 300);
+  assert.deepEqual(sent.map(([m]) => m), [11, 41, 60, 90, 150], 'the window at 50: a new alert at 60, then 30 and 90 minutes after it');
+  assert.match(sent[2][1], /MINI left open/);
+});
+
+test('reminders after a restart from an older state count from the last notification', () => {
+  const watcher = new Watcher({ ...DEFAULT_CONFIG });
+  watcher.restoreNotify({ notified: [TILT], lastNotify: 5000, reminders: 1, alerted: true }, 6000);
+  assert.equal(watcher.firstNotifyAt, 5000);
 });

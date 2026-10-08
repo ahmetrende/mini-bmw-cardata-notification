@@ -189,8 +189,7 @@ export const DEFAULT_CONFIG = {
   timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
   alert_after_min: 10,
   alert_after_lock_min: 0, // Wait after the car is locked from outside, for a part that was open at that time. 0 = at once.
-  remind_every_min: 60,
-  remind_max_min: 480,
+  remind_after_min: [30, 90], // Reminders: minutes after the first notification. [] = no reminder.
   park_after_idle_min: 30,
   silence_alert_hours: 0, // 0 = off. Otherwise one notification when the car sends no data for this time.
   vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
@@ -199,7 +198,8 @@ export const DEFAULT_CONFIG = {
 };
 
 // Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
-const MINUTE_SETTINGS = { alert_after_min: 0, alert_after_lock_min: 0, remind_every_min: 1, remind_max_min: 1, park_after_idle_min: 1 };
+const MINUTE_SETTINGS = { alert_after_min: 0, alert_after_lock_min: 0, park_after_idle_min: 1 };
+const MAX_REMINDERS = 10;
 const MAX_MINUTES = 7 * 24 * 60;
 const MAX_SILENCE_HOURS = 30 * 24;
 
@@ -215,6 +215,16 @@ export function checkConfig(cfg) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > MAX_MINUTES) {
       throw new Error(`"${key}" must be a number of minutes from ${min} to ${MAX_MINUTES}. Now it is ${JSON.stringify(value)}.`);
     }
+  }
+  const remind = cfg.remind_after_min;
+  const remindOk =
+    Array.isArray(remind) &&
+    remind.length <= MAX_REMINDERS &&
+    remind.every((m, i) => typeof m === 'number' && Number.isFinite(m) && m >= 1 && m <= MAX_MINUTES && (i === 0 || m > remind[i - 1]));
+  if (!remindOk) {
+    throw new Error(
+      `"remind_after_min" must be a list of up to ${MAX_REMINDERS} rising minutes, for example [30, 90]. [] means no reminder. Now it is ${JSON.stringify(remind)}.`,
+    );
   }
   const hours = cfg.silence_alert_hours;
   if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0 || hours > MAX_SILENCE_HOURS) {
@@ -441,6 +451,7 @@ export class Watcher {
     this.sawClose = false; // Did the program see a part close? Missing data does not count as closed.
     this.lastNotify = 0;
     this.reminders = 0; // reminders sent since the last "left open" notification
+    this.firstNotifyAt = 0; // time of the last "left open" notification. The reminders count from it.
     this.ignition = null; // true / false / null (unknown)
     this.moving = null;
     this.parkedSince = null; // time the car was first known to be parked
@@ -504,6 +515,7 @@ export class Watcher {
       notified: [...this.notified],
       lastNotify: this.lastNotify,
       reminders: this.reminders,
+      firstNotifyAt: this.firstNotifyAt,
       alerted: this.alerted,
       sawClose: this.sawClose,
     };
@@ -531,6 +543,7 @@ export class Watcher {
     this.notified = new Set(snap.notified ?? []);
     this.lastNotify = snap.lastNotify ?? 0;
     this.reminders = snap.reminders ?? 0;
+    this.firstNotifyAt = snap.firstNotifyAt ?? snap.lastNotify ?? 0; // Older versions: the last notification.
     this.alerted = Boolean(snap.alerted);
     this.sawClose = Boolean(snap.sawClose);
     return true;
@@ -657,9 +670,10 @@ export class Watcher {
     if (current.size === 0) return; // A part is open but the wait time is not over.
     this.sawClose = false;
     const added = [...current].some((name) => !this.notified.has(name));
-    // Each reminder waits twice as long as the one before: 60, 120, 240 minutes, up to remind_max_min.
-    const interval = Math.min(this.cfg.remind_every_min * 2 ** this.reminders, this.cfg.remind_max_min) * 60;
-    const remind = this.clock() - this.lastNotify >= interval;
+    // Reminders at fixed times after the first notification (remind_after_min, default 30 and 90 minutes).
+    // After the last one, no more reminders. A new open part starts a new series.
+    const nextReminder = this.cfg.remind_after_min[this.reminders];
+    const remind = nextReminder !== undefined && this.clock() - this.firstNotifyAt >= nextReminder * 60;
     if (added || remind) {
       // The oldest open part comes first. Each part shows the time the program first saw it open,
       // or the start of this park if the part was already open before it (open during the drive or
@@ -675,6 +689,7 @@ export class Watcher {
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
+      if (added) this.firstNotifyAt = this.clock();
       this.notified = current;
       this.lastNotify = this.clock();
     }

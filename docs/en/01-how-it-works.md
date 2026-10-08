@@ -49,8 +49,7 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 |---|---|---|
 | Wait time after the last driver door opening | 10 minutes | `alert_after_min` |
 | Wait time after you lock the car from outside | 0 (at once) | `alert_after_lock_min` |
-| First reminder when a part is still open | 60 minutes | `remind_every_min` |
-| Longest time between two reminders | 480 minutes (8 hours) | `remind_max_min` |
+| Reminders after the first notification | 30 and 90 minutes | `remind_after_min` (`[30, 90]`) |
 | Odometer idle time that counts as parked | 30 minutes | `park_after_idle_min` |
 | Language of the notification text | `en` | `language` (`en` or `tr`) |
 | Time zone of the times in the notification | the server time zone | `timezone` (example: `Europe/Istanbul`) |
@@ -59,7 +58,7 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 - **Why 10 minutes.** The driver door also opens when the driver gets in. In the test car, the first odometer value came 3 to 7 minutes after the driver got in. A wait of 10 minutes covers that time. The timer starts again at each driver door opening.
 - **At once after the lock.** A part that is open when you lock the car is a forgotten part. The program checks every 15 seconds, so the notification comes in 15 seconds. You are still near the car. A part that opens after the lock, for example the trunk, follows the normal 10 minute wait.
 - **Comfort close.** If you hold the lock button to close the windows and the sunroof, you can get "left open" and then "everything is closed". To prevent this, set `alert_after_lock_min` to 1.
-- **Reminders.** Each reminder waits twice as long as the one before: 1 hour, 2 hours, 4 hours, then 8 hours. A part that stays open all night does not send a notification each hour.
+- **Reminders.** Two reminders come: 30 and 90 minutes after the first notification. Then the program is silent until all parts close or a new part opens. A new part starts a new series.
 - **One message.** A notification lists all open parts. The oldest part comes first.
 - **Time of each part.** A part shows "since 13:48". This is the time the program first saw the part open. If the part was already open before the park (during the drive or since an earlier day), the time is the start of the park: the lock from outside, or the time the driver got out. A lock more than 10 minutes later does not change this time. For an earlier day, the notification shows the date too, for example "since 6 Oct 13:48". After a restart, the program keeps these times. It reads `state.json` and the messages of the last 24 hours. If the program was off for more than 24 hours, a part that is open for longer shows the start of the replay as its time.
 - **A new part opens.** After the wait time you get a new notification. It lists all open parts.

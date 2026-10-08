@@ -59,7 +59,7 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 | Durum | Bildirim |
 |---|---|
 | Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra. Aracı kilitlersen hemen. |
-| Parça hâlâ açık | 1, 2 ve 4 saat sonra, sonra 8 saatte bir hatırlatma |
+| Parça hâlâ açık | İlk bildirimden 30 ve 90 dakika sonra hatırlatma. Sonra başka yok. |
 | Her şeyi kapattın | "Her şey kapandı" diyen tek bir mesaj |
 | Araç yolda | Bildirim yok |
 

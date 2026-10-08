@@ -58,8 +58,7 @@ sudo systemctl restart mini-watch
 | `timezone` | server time zone | Time zone of the times in the notification. Example: `Europe/Istanbul` |
 | `alert_after_min` | 10 | Wait time after the last driver door opening, before a notification |
 | `alert_after_lock_min` | 0 | Wait time after you lock the car from outside, for a part that was open at the lock. 0 = at once. Use 1 if you close the windows with the lock button. |
-| `remind_every_min` | 60 | First reminder time when a part is still open. Each next reminder waits twice as long. |
-| `remind_max_min` | 480 | Longest time between two reminders |
+| `remind_after_min` | `[30, 90]` | Reminders, in minutes after the first notification. `[]` = no reminder. Up to 10 values, each larger than the one before. |
 | `park_after_idle_min` | 30 | The car counts as parked when the odometer is still for this time |
 | `silence_alert_hours` | 0 (off) | One notification when the car sends no data for this many hours. The car sends nothing while it sleeps, so a long parked time also gives this notification. |
 | `vehicle_names` | `{}` | Names for the cars of an account with more than one car. Example: `{"VIN-OF-CAR-1": "Countryman"}` |

@@ -49,8 +49,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 |---|---|---|
 | Sürücü kapısı son açıldıktan sonraki bekleme | 10 dakika | `alert_after_min` |
 | Aracı dışarıdan kilitledikten sonraki bekleme | 0 (hemen) | `alert_after_lock_min` |
-| Parça hâlâ açıksa ilk hatırlatma | 60 dakika | `remind_every_min` |
-| İki hatırlatma arasındaki en uzun süre | 480 dakika (8 saat) | `remind_max_min` |
+| İlk bildirimden sonraki hatırlatmalar | 30 ve 90 dakika | `remind_after_min` (`[30, 90]`) |
 | Kilometre bu kadar durursa araç park sayılır | 30 dakika | `park_after_idle_min` |
 | Bildirim metninin dili | `en` | `language` (`en` veya `tr`) |
 | Bildirimdeki saatlerin saat dilimi | sunucunun saat dilimi | `timezone` (örnek: `Europe/Istanbul`) |
@@ -59,7 +58,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 - **Neden 10 dakika?** Sürücü kapısı biniş sırasında da açılır. Test aracında ilk kilometre verisi, binişten 3 ile 7 dakika sonra geldi. 10 dakikalık bekleme bu süreyi karşılar. Sayaç, sürücü kapısı her açıldığında baştan başlar.
 - **Kilitlenince hemen.** Aracı kilitlerken açık olan parça unutulmuş bir parçadır. Program 15 saniyede bir kontrol eder, bildirim en geç 15 saniyede gelir. O sırada hâlâ aracın yakınındasın. Kilitten sonra açılan bir parça, örneğin bagaj, normal 10 dakikalık beklemeye uyar.
 - **Konfor kapanması.** Camları ve cam tavanı kilit düğmesine basılı tutarak kapatıyorsan önce "açık kaldı", hemen ardından "her şey kapandı" bildirimi gelebilir. Bunu istemiyorsan `alert_after_lock_min` değerini 1 yap.
-- **Hatırlatmalar.** Her hatırlatma bir öncekinin iki katı bekler: 1 saat, 2 saat, 4 saat, sonra 8 saat. Gece boyunca açık kalan bir parça saat başı bildirim yollamaz.
+- **Hatırlatmalar.** İki hatırlatma gelir: ilk bildirimden 30 ve 90 dakika sonra. Sonra program, tüm parçalar kapanana ya da yeni bir parça açılana kadar sessiz kalır. Yeni bir parça yeni bir seri başlatır.
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. En eski açılan parça başta durur.
 - **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça parktan önce de açıksa (sürüş sırasında veya önceki bir günden beri) saat, parkın başladığı andır: dışarıdan kilitleme ya da sürücünün indiği an. 10 dakikadan daha sonra yapılan bir kilit bu saati değiştirmez. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa bu saatleri korur. `state.json` dosyasını ve son 24 saatin mesajlarını okur. Program 24 saatten uzun kapalı kaldıysa, daha uzun süredir açık olan bir parçanın saati okumanın başladığı an olarak görünür.
 - **Yeni bir parça açılırsa.** Bekleme süresi dolunca yeni bir bildirim düşer. Bu bildirim de tüm açık parçaları sıralar.
