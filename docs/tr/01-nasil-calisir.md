@@ -73,6 +73,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 - **Bağlantı kopması.** Sağlıklı bir bağlantı kapanırsa program 5 saniye sonra yeniden bağlanır. Bağlantı art arda kısa sürede koparsa bekleme süresi 60 saniyeye kadar ikiye katlanır. BMW, kısa sürede çok sayıda bağlantı denemesini sınırlar.
 - **Yeniden başlama.** Program açık parçaları, kilometreyi ve yolladığı bildirimleri `state.json` dosyasına yazar. Bildirimden hemen sonra, diğer durumlarda en çok dakikada bir yazar. Açılışta `state.json` dosyasını ve son 24 saatin mesajlarını okur. Aynı bildirim ikinci kez gitmez. Geçmişteki bozuk bir satırı atlar.
 - **Geçmiş dosyası.** `messages.jsonl` 10 MB'a kadar büyür. Sonra `messages.jsonl.1` olur ve yeni bir dosya başlar. Program en çok iki dosya tutar. 64 KB'tan büyük bir mesaj kaydedilmez.
+- **Bellek.** Program yaklaşık 40 MB kullanır. En çok 250 MB kullanabilir. Bunu aşarsa systemd yalnız programı yeniden başlatır. Takas dosyası, bellek dolsa da sunucuya erişilebilmesini sağlar.
 - **Takılan program.** Program 30 saniyede bir systemd'ye çalıştığını bildirir (watchdog). Ana döngüsü 10 dakika durursa systemd servisi yeniden başlatır.
 - **ntfy'ye ulaşılamazsa.** Program bildirimi gönderilmiş saymaz. 30 saniye sonra yeniden dener. Her yeni deneme bir öncekinin iki katı bekler, en çok 10 dakika.
 - **Abonelik hatası.** Akış aboneliği reddederse program bağlantıyı kapatır ve yeniden bağlanır.

@@ -73,6 +73,7 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 - **Connection loss.** After a healthy connection closes, the program reconnects in 5 seconds. After repeated short connections the wait time doubles up to 60 seconds. BMW limits many connection attempts.
 - **Restart.** The program saves the open parts, the odometer and the sent notifications in `state.json`. It saves at once after a notification, else at most once a minute. At a start it reads `state.json` and the messages of the last 24 hours. The same notification does not repeat. The program skips a broken line in the history.
 - **History file.** `messages.jsonl` grows to 10 MB. Then it becomes `messages.jsonl.1` and a new file starts. The program keeps two files at most. A message larger than 64 KB is not stored.
+- **Memory.** The program uses about 40 MB. It may use at most 250 MB. Above that, systemd restarts only the program. The swap file keeps the server reachable when the memory is full.
 - **Stuck program.** The program tells systemd every 30 seconds that it runs (watchdog). If its main loop stops for 10 minutes, systemd restarts the service.
 - **ntfy is not reachable.** The program does not count the notification as sent. It tries again after 30 seconds. Each next try waits twice as long, up to 10 minutes.
 - **Subscription error.** If the stream refuses the subscription, the program closes the connection and connects again.

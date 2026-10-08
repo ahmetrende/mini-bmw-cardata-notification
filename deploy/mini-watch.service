@@ -21,6 +21,11 @@ WatchdogSec=90
 NotifyAccess=all
 # The log goes to the system journal. Read it with: journalctl -u mini-watch
 
+# Memory. The program uses about 40 MB. Above 150 MB the kernel slows it. Above 250 MB systemd stops it
+# and starts it again. A memory leak in the program cannot fill the memory of the whole server.
+MemoryHigh=150M
+MemoryMax=250M
+
 # Limits. The program can write only to /var/lib/mini-watch. New files are private (0600).
 UMask=0077
 NoNewPrivileges=true

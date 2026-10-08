@@ -138,7 +138,7 @@ cd mini-bmw-cardata-notification
 sudo bash deploy/install.sh
 ```
 
-Betik Node 22'yi kurar, `miniwatch` kullanıcısını oluşturur, programı `/opt/mini-watch/releases` içine kurar ve servisi kurar. Ayarların ve verilerin `/var/lib/mini-watch` klasöründe durur. Bu klasörü yalnızca `miniwatch` kullanıcısı okuyabilir. Betik ayrıca `mini-watch` komutunu kurar. İş bitince "Install done." yazar.
+Betik Node 22'yi kurar, `miniwatch` kullanıcısını oluşturur, programı `/opt/mini-watch/releases` içine kurar ve servisi kurar. Ayarların ve verilerin `/var/lib/mini-watch` klasöründe durur. Bu klasörü yalnızca `miniwatch` kullanıcısı okuyabilir. Betik ayrıca `mini-watch` komutunu kurar. Sunucunun belleği 2 GB'tan azsa ve takas alanı yoksa 1 GB'lık bir takas dosyası ekler. İş bitince "Install done." yazar.
 
 Saat dilimini ayarlamak isteğe bağlı. Yalnızca log'daki saatleri etkiler:
 

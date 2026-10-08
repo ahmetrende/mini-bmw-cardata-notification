@@ -122,6 +122,7 @@ Giriş adımları için [3. adımın](04-sunucu-kurulumu.md) 7. bölümüne bak.
 | Bildirimdeki saat yanlış | `timezone` ayarı boş veya yanlış. | `config.json` içine kendi saat dilimini yaz. Örnek: `Europe/Istanbul`. |
 | Log "Notification sent" diyor ama telefonda bir şey yok | Abonelik yok veya bildirimler kapalı. | ntfy uygulamasında konu adını ve telefon izinlerini kontrol et. |
 | SSH "Connection timed out" veriyor | `--tunnel-through-iap` bayrağı eksik. | Bayrağı ekle. Sunucu yalnızca IAP tünelini kabul ediyor. |
+| Bayrak var ama SSH yanıt vermiyor | Sunucunun belleği dolu. | 5 dakika bekle. Sonra sunucuyu durdurup başlat: `gcloud compute instances stop` ve `start`. `reset` kullanma. `tools/replay.mjs` aracını sunucuda çalıştırma. |
 
 ## Sunucuyu yeniden başlat
 

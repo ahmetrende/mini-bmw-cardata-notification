@@ -120,6 +120,7 @@ For the login steps, see [Step 3](04-server-setup.md), part 7.
 | The time in the notification is wrong | `timezone` is empty or wrong. | Write your time zone in `config.json`. Example: `Europe/Istanbul`. |
 | The log shows "Notification sent", but the phone shows nothing | No subscription, or notifications are off. | Check the topic name and the phone permissions in the ntfy app. |
 | SSH shows "Connection timed out" | The `--tunnel-through-iap` flag is missing. | Add the flag. The server accepts only the IAP tunnel. |
+| SSH does not answer, the flag is there | The memory of the server is full. | Wait 5 minutes. Then stop and start the server: `gcloud compute instances stop` and `start`. Do not use `reset`. Do not run `tools/replay.mjs` on the server. |
 
 ## Restart the server
 

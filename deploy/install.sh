@@ -6,6 +6,7 @@
 #
 # What it does:
 # - Installs Node (a fixed version, checked against the SHA-256 value in this file).
+# - Adds a 1 GB swap file on a small server without swap.
 # - Creates the miniwatch user.
 # - Installs the code as a new release in /opt/mini-watch/releases. The code belongs to root.
 #   The service can read it but cannot change it.
@@ -114,6 +115,21 @@ if [ ! -x "$NODE" ] || [ "$("$NODE" -p 'process.versions.node.split(".")[0]' 2>/
   echo "Installed $FILE (SHA-256 $SUM)."
 fi
 echo "Node: $("$NODE" -v), OpenSSL: $("$NODE" -p process.versions.openssl)"
+
+# A swap file for a small server (less than 2 GB of memory, no swap). Without swap a full memory can make
+# the server stop to answer, also SSH. This happened once on an e2-micro server (953 MB).
+MEM_KB="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
+FREE_KB="$(df -Pk / | awk 'NR == 2 {print $4}')"
+if [ -z "$(swapon --noheadings --show 2>/dev/null)" ] && [ "$MEM_KB" -lt 2000000 ] && [ "$FREE_KB" -gt 3000000 ] && [ ! -e /swapfile ]; then
+  fallocate -l 1G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
+  echo 'vm.swappiness=10' >/etc/sysctl.d/99-mini-watch-swap.conf
+  sysctl -q -p /etc/sysctl.d/99-mini-watch-swap.conf
+  echo "Added a 1 GB swap file (/swapfile)."
+fi
 
 id miniwatch >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbin/nologin miniwatch
 WAS_ACTIVE=0

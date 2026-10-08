@@ -45,6 +45,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 ## Known traps
 
 - **Close the public firewall rules last.** Create the IAP rule. Test `--tunnel-through-iap`. Then delete `default-allow-ssh`, `default-allow-rdp` and `default-allow-icmp`. If you delete first, you lose access to the server.
+- **A small server can stop to answer when its memory is full.** On 2026-10-07 an old memory leak and a replay on the server filled the 953 MB of an e2-micro server. SSH did not answer. The service now has `MemoryMax=250M` and `install.sh` adds a 1 GB swap file. Still, run long tools on another computer.
 - **Do not reset the server with a hard reset** (`gcloud compute instances reset`, or the console **Reset** button). Files that you wrote a moment before can become empty. Use `sudo systemctl reboot`. Run `sync` after you copy files.
 - **One stream connection for each account.** A second copy of the program with the same account breaks both. Do not run the program on the person's own computer when the server runs it.
 - **Subscribe before you log in.** Turn on **CarData API**, wait 60 seconds, turn on **CarData Stream**, wait 60 seconds. Then run the `login` command. A login before the subscription gives a token without the stream scope.
