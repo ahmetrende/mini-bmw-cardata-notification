@@ -883,3 +883,67 @@ test('after a drive the first lock still notifies at once', async () => {
   const sent = await simulate(events, 0, 70);
   assert.deepEqual(sent.map(([m]) => m), [24, 63]);
 });
+
+// ---- "Everything is closed" after a drive ----
+
+// Alert at minute 11 (sunroof open since the start). At 20 someone comes back, a drive follows (km at 24 to 39).
+// The driver gets out at 42. `during` and `after` are the events that close or open parts.
+const driveAfterAlert = (extra) => [
+  [0, { [KM]: 100, [TILT]: 'OPEN' }],
+  [1, DOOR_OPEN],
+  [1.2, DOOR_CLOSED],
+  [20, DOOR_OPEN],
+  [20.2, DOOR_CLOSED],
+  ...drive(24, 40, 101),
+  ...extra,
+  [42, DOOR_OPEN],
+  [42.2, DOOR_CLOSED],
+];
+
+test('closed after a drive: the sunroof closes right after the drive, one "closed" message at the park', async () => {
+  const sent = await simulate(driveAfterAlert([[41, { [TILT]: 'CLOSED' }]]), 0, 120);
+  // The driver door is a part too. The message comes when it closes again (42.2).
+  assert.deepEqual(sent.map(([m]) => m), [11, 42.25]);
+  assert.match(sent[1][1], /MINI: Everything is closed\./);
+});
+
+test('closed after a drive: the sunroof closes during the drive, the message waits for the park', async () => {
+  const sent = await simulate(driveAfterAlert([[30, { [TILT]: 'CLOSED' }]]), 0, 120);
+  assert.deepEqual(sent.map(([m]) => m), [11, 42.25], 'nothing while driving, also not after the later odometer values');
+  assert.match(sent[1][1], /Everything is closed\./);
+});
+
+test('closed after a drive: a part that is still open gives a new "left open", not "closed"', async () => {
+  const sent = await simulate(driveAfterAlert([]), 0, 120);
+  assert.deepEqual(sent.map(([m]) => m), [11, 52, 82], 'a new series: 10 minutes after the park, then 30 minutes later');
+  assert.match(sent[1][1], /MINI left open/);
+  assert.match(sent[2][1], /MINI still open/);
+});
+
+test('closed after a drive: an old alert does not give a wrong "closed" later', async () => {
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }],
+    [1, DOOR_OPEN],
+    [1.2, DOOR_CLOSED],
+    [12, { [TILT]: 'CLOSED' }], // alert at 11, "closed" at 12
+    ...drive(20, 40, 101),
+    [41, DOOR_OPEN],
+    [41.2, DOOR_CLOSED],
+    [100, { [WIN]: 'OPEN' }], // a short window opening days later
+    [101, { [WIN]: 'CLOSED' }],
+  ];
+  const sent = await simulate(events, 0, 300);
+  assert.deepEqual(sent.map(([m]) => m), [11, 12]);
+});
+
+test('closed after a drive: an alert is forgotten at an odometer increase when nothing is open and no close waits', () => {
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [KM]: 100 }), at(0));
+  watcher.alerted = true; // restored from disk, but no part is open and no close was seen
+  watcher.onData(msg({ [KM]: 101 }), at(1));
+  assert.equal(watcher.alerted, false);
+  watcher.onData(msg({ [TILT]: 'OPEN' }), at(2));
+  watcher.alerted = true;
+  watcher.onData(msg({ [KM]: 102 }), at(3));
+  assert.equal(watcher.alerted, true, 'a part is open: the alert stays');
+});

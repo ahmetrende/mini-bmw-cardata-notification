@@ -590,7 +590,10 @@ export class Watcher {
             this.parkLockAt = this.parkDoorAt = 0; // The car drives. The next park starts later.
             this.returnedAt = 0;
             this.notified = new Set(); // A new park, a new notification.
-            this.alerted = false;
+            // An alert stays open while a part is still open or a close waits for its message. Then
+            // "everything is closed" also comes after a drive, when you park. Else forget the alert,
+            // so an old alert cannot give a wrong "closed" days later.
+            if (this.openSince.size === 0 && !this.sawClose) this.alerted = false;
             this.reminders = 0;
           }
           this.lastKm = km;
