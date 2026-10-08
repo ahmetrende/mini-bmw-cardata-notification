@@ -805,7 +805,7 @@ test('reminders after a restart from an older state count from the last notifica
 
 const REAR_DOOR = 'vehicle.cabin.door.row2.passenger.isOpen';
 
-test('back at the car: unlocking stops the reminders, a new lock starts a new series at once', async () => {
+test('back at the car: unlocking stops the reminders, a new lock starts a new series after 2 minutes', async () => {
   const events = lockedTrip([
     [40, { [LOCK]: 'UNLOCKED' }], // back at the car before the 30 minute reminder (54)
     [40.5, { [REAR_DOOR]: true }],
@@ -813,7 +813,7 @@ test('back at the car: unlocking stops the reminders, a new lock starts a new se
     [42, { [LOCK]: 'SECURED' }], // locked again, the sunroof is still open
   ]);
   const sent = await simulate(events, 0, 300);
-  assert.deepEqual(sent.map(([m]) => m), [24, 42, 72, 132]);
+  assert.deepEqual(sent.map(([m]) => m), [24, 44, 74, 134]);
   assert.match(sent[1][1], /MINI left open/, 'a new series, not a reminder');
 });
 
@@ -830,7 +830,7 @@ test('back at the car without a new lock: a new series after the normal wait', a
 test('back at the car after the last reminder: a new lock starts a new series', async () => {
   const events = lockedTrip([[200, { [LOCK]: 'UNLOCKED' }], [201, { [LOCK]: 'SECURED' }]]);
   const sent = await simulate(events, 0, 400);
-  assert.deepEqual(sent.map(([m]) => m), [24, 54, 114, 201, 231, 291]);
+  assert.deepEqual(sent.map(([m]) => m), [24, 54, 114, 203, 233, 293]);
 });
 
 test('a door that stays open counts once, also when the car repeats it in each message', async () => {
@@ -844,4 +844,35 @@ test('a door that stays open counts once, also when the car repeats it in each m
   assert.equal(sent[0][0], 11, 'not moved to 18 by the repeated value');
   assert.match(sent[0][1], /front left door/);
   assert.deepEqual(sent.map(([m]) => m), [11, 41], 'the repeated value is no return to the car');
+});
+
+test('a walk around the car with many locks and unlocks gives one notification', async () => {
+  const events = lockedTrip([
+    [40, { [LOCK]: 'UNLOCKED' }],
+    [40.25, DOOR_OPEN],
+    [40.5, DOOR_CLOSED],
+    [41, { [LOCK]: 'SECURED' }],
+    [41.5, { [LOCK]: 'UNLOCKED' }],
+    [42, { [LOCK]: 'SECURED' }],
+    [42.25, { [LOCK]: 'UNLOCKED' }],
+    [42.5, { [LOCK]: 'SECURED' }], // the last lock
+  ]);
+  const sent = await simulate(events, 0, 300);
+  assert.deepEqual(sent.map(([m]) => m), [24, 44.5, 74.5, 134.5]);
+});
+
+test('after a drive the first lock still notifies at once', async () => {
+  const events = lockedTrip([
+    [40, { [LOCK]: 'UNLOCKED' }], // back at the car
+    [40.5, DOOR_OPEN],
+    [41, DOOR_CLOSED],
+    [41.5, { [LOCK]: 'LOCKED' }], // drives again
+    ...drive(45, 60, 110),
+    [61, { [LOCK]: 'UNLOCKED' }],
+    [62, DOOR_OPEN],
+    [62.5, DOOR_CLOSED],
+    [63, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 70);
+  assert.deepEqual(sent.map(([m]) => m), [24, 63]);
 });

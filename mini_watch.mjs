@@ -86,6 +86,9 @@ const DRIVING_STALE_S = 2 * 3600;
 // The lock time is the start of the park only when the lock came soon after the driver got out.
 // A lock hours later (for example with the app) does not move the time in the text.
 const PARK_LOCK_WINDOW_S = 600;
+// Back at the car without a drive, then a new lock: wait until the car stays locked for 2 minutes.
+// A walk around the car with many locks and unlocks gives one notification, not one for each lock.
+const RELOCK_WAIT_S = 120;
 
 // Text that the user sees on the phone. Log lines are always in English.
 const TEXT = {
@@ -461,6 +464,7 @@ export class Watcher {
     this.lastDriverDoorAt = 0; // time the driver door last opened (to get in or to get out)
     this.lastDoorAt = 0; // time any door last opened
     this.lastUnlockAt = 0; // time the lock last changed to UNLOCKED
+    this.returnedAt = 0; // someone came back to the car after a notification (0 after a drive)
     this.doorOpen = new Map(); // door attribute -> last value. The car repeats an open door in each message.
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
     this.lockChangedAt = 0;
@@ -510,6 +514,7 @@ export class Watcher {
       lastDriverDoorAt: this.lastDriverDoorAt,
       lastDoorAt: this.lastDoorAt,
       lastUnlockAt: this.lastUnlockAt,
+      returnedAt: this.returnedAt,
       lockStatus: this.lockStatus,
       lockChangedAt: this.lockChangedAt,
       driveEndAt: this.driveEndAt,
@@ -533,6 +538,7 @@ export class Watcher {
     this.lastDriverDoorAt = snap.lastDriverDoorAt ?? 0;
     this.lastDoorAt = snap.lastDoorAt ?? 0;
     this.lastUnlockAt = snap.lastUnlockAt ?? 0;
+    this.returnedAt = snap.returnedAt ?? 0;
     this.lockStatus = snap.lockStatus ?? null;
     this.lockChangedAt = snap.lockChangedAt ?? 0;
     this.driveEndAt = snap.driveEndAt ?? 0;
@@ -582,6 +588,7 @@ export class Watcher {
           if (this.lastKm !== null && km > this.lastKm) {
             this.kmChangedAt = at;
             this.parkLockAt = this.parkDoorAt = 0; // The car drives. The next park starts later.
+            this.returnedAt = 0;
             this.notified = new Set(); // A new park, a new notification.
             this.alerted = false;
             this.reminders = 0;
@@ -592,7 +599,7 @@ export class Watcher {
         const status = String(item?.value ?? '').toUpperCase();
         if (status && status !== this.lockStatus) {
           if (this.lockStatus === 'LOCKED') this.driveEndAt = at;
-          if (status === 'LOCKED') this.parkLockAt = this.parkDoorAt = 0; // A drive starts.
+          if (status === 'LOCKED') this.parkLockAt = this.parkDoorAt = this.returnedAt = 0; // A drive starts.
           if (status === 'UNLOCKED') this.lastUnlockAt = at;
           if (status === 'SECURED' && !this.parkLockAt) this.parkLockAt = at;
           this.lockStatus = status;
@@ -655,9 +662,11 @@ export class Watcher {
     // first (comfort close while you hold the lock button).
     const lockWait = this.cfg.alert_after_lock_min * 60;
     const secured = this.isSecured();
+    // After a return to the car without a drive, a new lock must stay for RELOCK_WAIT_S (2 minutes).
+    const securedWait = this.returnedAt ? Math.max(lockWait, RELOCK_WAIT_S) : lockWait;
     const due = (since) =>
       this.clock() - Math.max(since, this.parkStart()) >= wait ||
-      (secured && since <= this.lockChangedAt && this.clock() - this.lockChangedAt >= lockWait);
+      (secured && since <= this.lockChangedAt && this.clock() - this.lockChangedAt >= securedWait);
     // The timer starts when the part opened or when the car parked, whichever is later.
     const current = new Set(
       [...this.openSince]
@@ -666,10 +675,11 @@ export class Watcher {
     );
     this.notified = new Set([...this.notified].filter((name) => this.openSince.has(name))); // Forget closed parts.
     // Back at the car: a door opened or the car was unlocked after the first notification of the series.
-    // The remaining reminders stop. A part that is still open gives a new series: at once when the car
-    // is locked again, else after the normal wait.
+    // The remaining reminders stop. A part that is still open gives a new series: 2 minutes after the car
+    // is locked again (RELOCK_WAIT_S), else after the normal wait.
     if (this.notified.size && Math.max(this.lastDoorAt, this.lastUnlockAt) > this.firstNotifyAt) {
       this.notified = new Set();
+      this.returnedAt = Math.max(this.lastDoorAt, this.lastUnlockAt);
       this.urgent = true;
     }
     if (this.openSince.size === 0) {
