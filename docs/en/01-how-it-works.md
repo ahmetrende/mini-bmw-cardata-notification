@@ -29,7 +29,7 @@ Your car must send these attributes. The portal shows the list of attributes for
 
 ## Driving and parking
 
-The tested car sends no ignition, motion or speed data. The program finds driving from the odometer (`vehicle.vehicle.travelledDistance`).
+The tested car sends no ignition, motion or speed data. The program finds driving from the odometer (`vehicle.vehicle.travelledDistance`) and the central lock (`vehicle.cabin.door.status`).
 
 | Situation | Decision |
 |---|---|
@@ -37,6 +37,9 @@ The tested car sends no ignition, motion or speed data. The program finds drivin
 | The odometer rose, then the driver door opened | The driver left. Parking starts. |
 | The odometer did not rise for 30 minutes | Parked. A traffic jam can stop the odometer for more than 10 minutes. |
 | The program has no odometer data | A part that is open for 10 minutes causes a notification. |
+| The lock is `LOCKED` and no door opened after that | Driving. The car locks itself when it starts to drive. No notification. |
+| The lock changes from `LOCKED` to `UNLOCKED` | The drive ended. The car unlocks itself when you park. The wait starts again. |
+| The lock is `SECURED` after the last door opening | Parked and locked from outside. A part that was open at the lock causes a notification after 2 minutes. |
 
 If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 
@@ -45,6 +48,7 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 | Rule | Default | Setting in `config.json` |
 |---|---|---|
 | Wait time after the last driver door opening | 10 minutes | `alert_after_min` |
+| Wait time after you lock the car from outside | 2 minutes | `alert_after_lock_min` |
 | First reminder when a part is still open | 60 minutes | `remind_every_min` |
 | Longest time between two reminders | 480 minutes (8 hours) | `remind_max_min` |
 | Odometer idle time that counts as parked | 30 minutes | `park_after_idle_min` |
@@ -53,6 +57,7 @@ If your car sends `isIgnitionOn` or `isMoving`, the program uses them too.
 | Notification when the car sends no data | off | `silence_alert_hours` (example: `72`) |
 
 - **Why 10 minutes.** The driver door also opens when the driver gets in. In the test car, the first odometer value came 3 to 7 minutes after the driver got in. A wait of 10 minutes covers that time. The timer starts again at each driver door opening.
+- **Why 2 minutes after the lock.** A part that is open when you lock the car is a forgotten part. The 2 minutes let the windows and the sunroof close if you hold the lock button (comfort close). A part that opens after the lock, for example the trunk, follows the normal 10 minute wait.
 - **Reminders.** Each reminder waits twice as long as the one before: 1 hour, 2 hours, 4 hours, then 8 hours. A part that stays open all night does not send a notification each hour.
 - **One message.** A notification lists all open parts. The oldest part comes first.
 - **Time of each part.** A part shows "since 13:48". This is the time the program first saw the part open. For an earlier day, the notification shows the date too, for example "since 6 Oct 13:48". After a restart, the program keeps these times. It reads `state.json` and the messages of the last 24 hours. If the program was off for more than 24 hours, a part that is open for longer shows the start of the replay as its time.

@@ -659,3 +659,76 @@ test('with one car, state.json also has the fields of version 1 (for a rollback)
   assert.equal(state.reminders, 0);
   assert.equal(state.savedAt, 600);
 });
+
+// ---- Central lock (vehicle.cabin.door.status). Values from the tested car: UNLOCKED, LOCKED, SECURED. ----
+
+const LOCK = 'vehicle.cabin.door.status';
+const PASSENGER_DOOR = 'vehicle.cabin.door.row1.passenger.isOpen';
+const TRUNK = 'vehicle.body.trunk.isOpen';
+// A real drive of the tested car: unlock, get in, the car locks itself, drive, it unlocks at the end, get out, lock.
+const lockedTrip = (extra = []) => [
+  [0, { [KM]: 100, [TILT]: 'OPEN', [LOCK]: 'SECURED' }],
+  [1, { [LOCK]: 'UNLOCKED' }],
+  [1.5, DOOR_OPEN],
+  [1.8, DOOR_CLOSED],
+  [2, { [LOCK]: 'LOCKED' }],
+  ...drive(6, 21, 101),
+  [22, { [LOCK]: 'UNLOCKED' }],
+  [23, DOOR_OPEN],
+  [23.2, DOOR_CLOSED],
+  [24, { [LOCK]: 'SECURED' }],
+  ...extra,
+];
+
+test('lock: a part that is open when you lock the car gives a notification 2 minutes later', async () => {
+  const sent = await simulate(lockedTrip(), 0, 40);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 26, 'SECURED at 24 + 2 minutes (without the lock: 23 + 10 = 33)');
+  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
+});
+
+test('lock: the sunroof closes within 2 minutes after the lock (comfort close), no notification', async () => {
+  assert.deepEqual(await simulate(lockedTrip([[25, { [TILT]: 'CLOSED' }]]), 0, 60), []);
+});
+
+test('lock: a part that opens after the lock follows the normal wait', async () => {
+  const events = lockedTrip([[24.5, { [TILT]: 'CLOSED' }], [30, { [TRUNK]: true }]]);
+  const sent = await simulate(events, 0, 60);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 40, 'trunk opened at 30 + 10 minutes');
+  assert.match(sent[0][1], /trunk/);
+});
+
+test('lock: LOCKED while driving stops notifications, also without odometer data', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.1, DOOR_CLOSED],
+    [1.3, { [LOCK]: 'LOCKED' }],
+    [2, { [WIN]: 'OPEN' }], // no odometer value for an hour
+    [61, { [LOCK]: 'UNLOCKED' }],
+    [62, DOOR_OPEN],
+    [62.2, DOOR_CLOSED],
+  ];
+  const sent = await simulate(events, 0, 80);
+  assert.deepEqual(sent.map(([minute]) => minute), [72], 'only after the driver leaves (without the lock: minute 12)');
+});
+
+test('lock: LOCKED and then a passenger door opens, the car does not count as driving', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.1, DOOR_CLOSED],
+    [1.3, { [LOCK]: 'LOCKED' }],
+    [2, { [WIN]: 'OPEN' }],
+    [5, { [PASSENGER_DOOR]: true }],
+    [5.2, { [PASSENGER_DOOR]: false }],
+  ];
+  const sent = await simulate(events, 0, 30);
+  assert.deepEqual(sent.map(([minute]) => minute), [12]);
+});
+
+test('lock: alert_after_lock_min must be a number of minutes', () => {
+  checkConfig({ ...DEFAULT_CONFIG, alert_after_lock_min: 0 });
+  assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, alert_after_lock_min: -1 }), /alert_after_lock_min/);
+});

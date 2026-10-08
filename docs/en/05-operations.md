@@ -57,6 +57,7 @@ sudo systemctl restart mini-watch
 | `language` | `en` | Language of the notification text: `en` or `tr` |
 | `timezone` | server time zone | Time zone of the times in the notification. Example: `Europe/Istanbul` |
 | `alert_after_min` | 10 | Wait time after the last driver door opening, before a notification |
+| `alert_after_lock_min` | 2 | Wait time after you lock the car from outside, for a part that was open at the lock |
 | `remind_every_min` | 60 | First reminder time when a part is still open. Each next reminder waits twice as long. |
 | `remind_max_min` | 480 | Longest time between two reminders |
 | `park_after_idle_min` | 30 | The car counts as parked when the odometer is still for this time |

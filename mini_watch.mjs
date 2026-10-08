@@ -78,6 +78,10 @@ const IGNITION = 'vehicle.drivetrain.engine.isIgnitionOn';
 const MOVING = 'vehicle.isMoving';
 const ODOMETER = 'vehicle.vehicle.travelledDistance';
 const DRIVER_DOOR = 'vehicle.cabin.door.row1.driver.isOpen';
+const ANY_DOOR = /^vehicle\.cabin\.door\.row\d\.(driver|passenger)\.isOpen$/;
+// Central lock. The tested car (U25) sends UNLOCKED, LOCKED (the car locks itself when it starts to
+// drive) and SECURED (locked from outside with the key or the app).
+const LOCK = 'vehicle.cabin.door.status';
 const DRIVING_STALE_S = 2 * 3600;
 
 // Text that the user sees on the phone. Log lines are always in English.
@@ -181,6 +185,7 @@ export const DEFAULT_CONFIG = {
   language: 'en',
   timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
   alert_after_min: 10,
+  alert_after_lock_min: 2, // Wait after the car is locked from outside, for a part that was open at that time.
   remind_every_min: 60,
   remind_max_min: 480,
   park_after_idle_min: 30,
@@ -191,7 +196,7 @@ export const DEFAULT_CONFIG = {
 };
 
 // Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
-const MINUTE_SETTINGS = { alert_after_min: 0, remind_every_min: 1, remind_max_min: 1, park_after_idle_min: 1 };
+const MINUTE_SETTINGS = { alert_after_min: 0, alert_after_lock_min: 0, remind_every_min: 1, remind_max_min: 1, park_after_idle_min: 1 };
 const MAX_MINUTES = 7 * 24 * 60;
 const MAX_SILENCE_HOURS = 30 * 24;
 
@@ -440,6 +445,10 @@ export class Watcher {
     this.lastKm = null;
     this.kmChangedAt = 0; // time the odometer last increased
     this.lastDriverDoorAt = 0; // time the driver door last opened (to get in or to get out)
+    this.lastDoorAt = 0; // time any door last opened
+    this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
+    this.lockChangedAt = 0;
+    this.driveEndAt = 0; // time the lock left LOCKED (the car unlocks itself when you park)
     this.notifyFailures = 0; // failed notifications in a row
     this.retryAt = 0; // after a failed notification, the next try waits until this time
     this.unknownSeen = new Set(); // unknown values that are already in the log
@@ -452,7 +461,21 @@ export class Watcher {
   // driving = the odometer rose after the last driver door opening, and in the last park_after_idle_min.
   // The idle limit is long (30 minutes) because a traffic jam can stop the odometer for more than 10 minutes.
   // Ignition and motion data are used too when the car sends them. They count as stale after 2 hours.
+  // Locked from outside (SECURED) after the last door opening and the last odometer increase:
+  // the car is parked and the people left it.
+  isSecured() {
+    return this.lockStatus === 'SECURED' && this.lockChangedAt >= Math.max(this.lastDoorAt, this.kmChangedAt);
+  }
+
+  // The car locks itself (LOCKED) when it starts to drive. No door opened after that: the car drives,
+  // also before the first odometer value and in a traffic jam. Stale after 2 hours, then the odometer decides.
+  isLockedForDriving() {
+    return this.lockStatus === 'LOCKED' && this.lockChangedAt > this.lastDoorAt && this.clock() - this.lockChangedAt < DRIVING_STALE_S;
+  }
+
   isDriving() {
+    if (this.isSecured()) return false;
+    if (this.isLockedForDriving()) return true;
     const ignitionDriving = this.ignition === true || this.moving === true;
     if (ignitionDriving && this.clock() - this.drivingSeen < DRIVING_STALE_S) return true;
     const idleLimit = this.cfg.park_after_idle_min * 60;
@@ -466,6 +489,10 @@ export class Watcher {
       lastKm: this.lastKm,
       kmChangedAt: this.kmChangedAt,
       lastDriverDoorAt: this.lastDriverDoorAt,
+      lastDoorAt: this.lastDoorAt,
+      lockStatus: this.lockStatus,
+      lockChangedAt: this.lockChangedAt,
+      driveEndAt: this.driveEndAt,
       notified: [...this.notified],
       lastNotify: this.lastNotify,
       reminders: this.reminders,
@@ -481,6 +508,10 @@ export class Watcher {
     this.lastKm = snap.lastKm ?? null;
     this.kmChangedAt = snap.kmChangedAt ?? 0;
     this.lastDriverDoorAt = snap.lastDriverDoorAt ?? 0;
+    this.lastDoorAt = snap.lastDoorAt ?? 0;
+    this.lockStatus = snap.lockStatus ?? null;
+    this.lockChangedAt = snap.lockChangedAt ?? 0;
+    this.driveEndAt = snap.driveEndAt ?? 0;
   }
 
   // After the history replay. Ignore a notification memory that is older than the last odometer
@@ -495,11 +526,11 @@ export class Watcher {
     return true;
   }
 
-  // The wait time starts at the later of: the last driver door opening, the last odometer increase.
-  // The driver door also opens when the driver gets in. The car sends the first odometer value
+  // The wait time starts at the latest of: the last driver door opening, the last odometer increase,
+  // the end of a drive by the lock (LOCKED to UNLOCKED). The driver door also opens when the driver gets in. The car sends the first odometer value
   // 3 to 7 minutes after that. So the wait (alert_after_min, 10 minutes) must be longer than that.
   parkStart() {
-    return Math.max(this.parkedSince ?? 0, this.lastDriverDoorAt, this.kmChangedAt);
+    return Math.max(this.parkedSince ?? 0, this.lastDriverDoorAt, this.kmChangedAt, this.driveEndAt);
   }
 
   // "at" is the time of the message. A replay at startup passes the original time.
@@ -519,8 +550,17 @@ export class Watcher {
           }
           this.lastKm = km;
         }
-      } else if (name === DRIVER_DOOR && parseBool(item?.value) === true) {
-        this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
+      } else if (name === LOCK) {
+        const status = String(item?.value ?? '').toUpperCase();
+        if (status && status !== this.lockStatus) {
+          if (this.lockStatus === 'LOCKED') this.driveEndAt = at;
+          this.lockStatus = status;
+          this.lockChangedAt = at;
+        }
+      }
+      if (ANY_DOOR.test(name) && parseBool(item?.value) === true) {
+        this.lastDoorAt = Math.max(this.lastDoorAt, at);
+        if (name === DRIVER_DOOR) this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
       }
       if (!WATCHED.some((pattern) => pattern.test(name))) continue;
       const value = String(item?.value ?? '').toUpperCase();
@@ -563,10 +603,17 @@ export class Watcher {
     if (this.clock() < this.retryAt) return; // Wait after a failed notification.
     const t = textFor(this.cfg);
     const wait = this.cfg.alert_after_min * 60;
+    // A part that was open when the car was locked from outside: notify after alert_after_lock_min.
+    // The short wait lets the windows and the sunroof close (comfort close while you hold the lock button).
+    const lockWait = this.cfg.alert_after_lock_min * 60;
+    const secured = this.isSecured();
+    const due = (since) =>
+      this.clock() - Math.max(since, this.parkStart()) >= wait ||
+      (secured && since <= this.lockChangedAt && this.clock() - this.lockChangedAt >= lockWait);
     // The timer starts when the part opened or when the car parked, whichever is later.
     const current = new Set(
       [...this.openSince]
-        .filter(([, since]) => this.clock() - Math.max(since, this.parkStart()) >= wait)
+        .filter(([, since]) => due(since))
         .map(([name]) => name),
     );
     this.notified = new Set([...this.notified].filter((name) => this.openSince.has(name))); // Forget closed parts.

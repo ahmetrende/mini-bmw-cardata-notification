@@ -29,7 +29,7 @@ Aracın bu öznitelikleri yollaması gerekir. Portal, aracının yolladığı ö
 
 ## Araç yolda mı, park halinde mi?
 
-Test edilen araç kontak, hareket ve hız verisi yollamıyor. Program, aracın yolda olduğunu kilometre sayacından (`vehicle.vehicle.travelledDistance`) anlıyor.
+Test edilen araç kontak, hareket ve hız verisi yollamıyor. Program, aracın yolda olduğunu kilometre sayacından (`vehicle.vehicle.travelledDistance`) ve merkezi kilitten (`vehicle.cabin.door.status`) anlıyor.
 
 | Durum | Programın kararı |
 |---|---|
@@ -37,6 +37,9 @@ Test edilen araç kontak, hareket ve hız verisi yollamıyor. Program, aracın y
 | Kilometre arttı, ardından sürücü kapısı açıldı | Sürücü indi. Park başladı. |
 | Kilometre 30 dakikadır artmıyor | Araç park halinde. Trafik sıkışıklığında kilometre 10 dakikadan uzun durabilir. |
 | Programda hiç kilometre verisi yok | Bir parça 10 dakikadır açıksa bildirim düşer. |
+| Kilit `LOCKED` ve sonrasında hiçbir kapı açılmadı | Araç yolda. Araç yola çıkınca kendini kilitler. Bildirim yok. |
+| Kilit `LOCKED` durumundan `UNLOCKED` durumuna geçti | Sürüş bitti. Araç park edince kilidi kendisi açar. Bekleme baştan başlar. |
+| Son kapı açılışından sonra kilit `SECURED` | Araç park edildi ve dışarıdan kilitlendi. Kilitlerken açık olan parça 2 dakika sonra bildirim üretir. |
 
 Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır.
 
@@ -45,6 +48,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 | Kural | Varsayılan | `config.json` ayarı |
 |---|---|---|
 | Sürücü kapısı son açıldıktan sonraki bekleme | 10 dakika | `alert_after_min` |
+| Aracı dışarıdan kilitledikten sonraki bekleme | 2 dakika | `alert_after_lock_min` |
 | Parça hâlâ açıksa ilk hatırlatma | 60 dakika | `remind_every_min` |
 | İki hatırlatma arasındaki en uzun süre | 480 dakika (8 saat) | `remind_max_min` |
 | Kilometre bu kadar durursa araç park sayılır | 30 dakika | `park_after_idle_min` |
@@ -53,6 +57,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 | Araçtan veri gelmezse bildirim | kapalı | `silence_alert_hours` (örnek: `72`) |
 
 - **Neden 10 dakika?** Sürücü kapısı biniş sırasında da açılır. Test aracında ilk kilometre verisi, binişten 3 ile 7 dakika sonra geldi. 10 dakikalık bekleme bu süreyi karşılar. Sayaç, sürücü kapısı her açıldığında baştan başlar.
+- **Neden kilitten 2 dakika sonra?** Aracı kilitlerken açık olan parça unutulmuş bir parçadır. 2 dakika, kilit düğmesine basılı tutarsan camların ve cam tavanın kapanmasına zaman tanır (konfor kapanması). Kilitten sonra açılan bir parça, örneğin bagaj, normal 10 dakikalık beklemeye uyar.
 - **Hatırlatmalar.** Her hatırlatma bir öncekinin iki katı bekler: 1 saat, 2 saat, 4 saat, sonra 8 saat. Gece boyunca açık kalan bir parça saat başı bildirim yollamaz.
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. En eski açılan parça başta durur.
 - **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa bu saatleri korur. `state.json` dosyasını ve son 24 saatin mesajlarını okur. Program 24 saatten uzun kapalı kaldıysa, daha uzun süredir açık olan bir parçanın saati okumanın başladığı an olarak görünür.

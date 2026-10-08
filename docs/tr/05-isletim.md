@@ -59,6 +59,7 @@ sudo systemctl restart mini-watch
 | `language` | `en` | Bildirim metninin dili: `en` veya `tr` |
 | `timezone` | sunucunun saat dilimi | Bildirimdeki saatlerin saat dilimi. Örnek: `Europe/Istanbul` |
 | `alert_after_min` | 10 | Sürücü kapısı son açıldıktan sonra bildirimden önceki bekleme |
+| `alert_after_lock_min` | 2 | Aracı dışarıdan kilitledikten sonra, kilitlerken açık olan parça için bekleme |
 | `remind_every_min` | 60 | Parça hâlâ açıksa ilk hatırlatma süresi. Sonraki her hatırlatma iki kat bekler. |
 | `remind_max_min` | 480 | İki hatırlatma arasındaki en uzun süre |
 | `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |

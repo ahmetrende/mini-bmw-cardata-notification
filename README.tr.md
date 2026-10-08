@@ -58,7 +58,7 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 
 | Durum | Bildirim |
 |---|---|
-| Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra |
+| Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra. Aracı kilitlersen 2 dakika sonra. |
 | Parça hâlâ açık | 1, 2 ve 4 saat sonra, sonra 8 saatte bir hatırlatma |
 | Her şeyi kapattın | "Her şey kapandı" diyen tek bir mesaj |
 | Araç yolda | Bildirim yok |
@@ -67,9 +67,9 @@ Tek bildirim, açık olan tüm parçaları sıralar. Süreleri `config.json` dos
 
 ## Sınırlar
 
-- **Kilit durumu görünmez.** CarData, kapı kilidi bilgisini yollamaz. Program "park edildi ve açık" durumuna bakar. "Kilitli ama açık" durumunu bilemez.
-- **Test edilen araç kontak ve hız bilgisi yollamıyor.** Program, aracın yolda olduğunu kilometre sayacından anlar.
-- **Bildirim, sürücü kapısı açıldıktan 10 dakika sonra gelir.** Araç ilk kilometre verisini yola çıktıktan 3-7 dakika sonra yollar. Daha kısa bir bekleme, yola çıkarken yanlış bildirim üretir.
+- **Kilit durumu her araçta yok.** Test edilen araç merkezi kilit bilgisini (`vehicle.cabin.door.status`) yolluyor. Program böylece aracı kilitlediğini ve aracın yolda olduğunu anlar. Bu bilgi yoksa yalnızca "park edildi ve açık" durumuna bakar.
+- **Test edilen araç kontak ve hız bilgisi yollamıyor.** Program, aracın yolda olduğunu kilometre sayacından ve kilitten anlar.
+- **Kilitlemezsen bildirim, sürücü kapısı açıldıktan 10 dakika sonra gelir.** Araç ilk kilometre verisini yola çıktıktan 3-7 dakika sonra yollar. Daha kısa bir bekleme, yola çıkarken yanlış bildirim üretir.
 - **Sürücü kapısı açılmadan uzun süre durursan** (30 dakika veya daha fazla) araç park edilmiş sayılır.
 - **Hesap başına tek bağlantı var.** Programı aynı hesapla iki yerde çalıştırma.
 - **BMW servisi değiştirebilir.** Program habersiz çalışmayı bırakabilir.

@@ -55,7 +55,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **The car sends data only when something changes.** An asleep car sends nothing. A remote light signal or an open and close of a door wakes the data.
 - **Server paths.** The code is in `/opt/mini-watch/releases/<date>-<commit>` and belongs to root. `/opt/mini-watch/current` points to the release in use. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. Use `sudo mini-watch login`, `sudo mini-watch ntfy-test` and `sudo mini-watch doctor`. Do not start a second copy with `run`.
 - **Update and rollback.** `sudo bash deploy/install.sh` checks the new release, switches, and waits for `Subscribed`. Without it, the script goes back to the release before. `sudo bash deploy/install.sh --rollback` goes back by hand.
-- **The tested car (MINI Countryman E, U25) sends no ignition, motion, speed or door lock data.** Do not promise these features. Another car can differ.
+- **The tested car (MINI Countryman E, U25) sends no ignition, motion or speed data.** It sends the central lock (`vehicle.cabin.door.status`: `UNLOCKED`, `LOCKED` while it drives, `SECURED` after a lock from outside). It does not send `alarm.armStatus`. Do not promise more. Another car can differ.
 
 ## Change the code
 
