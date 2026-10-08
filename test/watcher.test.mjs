@@ -85,11 +85,13 @@ test('a new drive resets the notification memory', async () => {
   watcher.onData(msg({ [KM]: 100, [TILT]: 'OPEN' }), at(0));
   watcher.onData(msg({ [KM]: 101 }), at(3));
   watcher.onData(msg({ [DRIVER_DOOR]: true }), at(4));
+  watcher.onData(msg({ [DRIVER_DOOR]: false }), at(4.5));
   at(14);
   assert.equal((await logsDuring(() => watcher.check())).length, 1);
   assert.equal((await logsDuring(() => watcher.check())).length, 0, 'no repeat');
   watcher.onData(msg({ [KM]: 102 }), at(20)); // the car drives again
   watcher.onData(msg({ [DRIVER_DOOR]: true }), at(21));
+  watcher.onData(msg({ [DRIVER_DOOR]: false }), at(21.5));
   at(31);
   assert.equal((await logsDuring(() => watcher.check())).length, 1, 'new park, new notification');
 });
@@ -759,7 +761,8 @@ test('lock: LOCKED and then a passenger door opens, the car does not count as dr
     [5.2, { [PASSENGER_DOOR]: false }],
   ];
   const sent = await simulate(events, 0, 30);
-  assert.deepEqual(sent.map(([minute]) => minute), [12]);
+  // Not driving. The passenger door at 5 starts the wait again (each door opening does): 5 + 10.
+  assert.deepEqual(sent.map(([minute]) => minute), [15]);
 });
 
 test('lock: alert_after_lock_min must be a number of minutes', () => {
@@ -796,4 +799,49 @@ test('reminders after a restart from an older state count from the last notifica
   const watcher = new Watcher({ ...DEFAULT_CONFIG });
   watcher.restoreNotify({ notified: [TILT], lastNotify: 5000, reminders: 1, alerted: true }, 6000);
   assert.equal(watcher.firstNotifyAt, 5000);
+});
+
+// ---- Back at the car: reminders stop, a new lock starts a new series ----
+
+const REAR_DOOR = 'vehicle.cabin.door.row2.passenger.isOpen';
+
+test('back at the car: unlocking stops the reminders, a new lock starts a new series at once', async () => {
+  const events = lockedTrip([
+    [40, { [LOCK]: 'UNLOCKED' }], // back at the car before the 30 minute reminder (54)
+    [40.5, { [REAR_DOOR]: true }],
+    [41, { [REAR_DOOR]: false }],
+    [42, { [LOCK]: 'SECURED' }], // locked again, the sunroof is still open
+  ]);
+  const sent = await simulate(events, 0, 300);
+  assert.deepEqual(sent.map(([m]) => m), [24, 42, 72, 132]);
+  assert.match(sent[1][1], /MINI left open/, 'a new series, not a reminder');
+});
+
+test('back at the car without a new lock: a new series after the normal wait', async () => {
+  const events = lockedTrip([
+    [40, { [LOCK]: 'UNLOCKED' }],
+    [40.5, DOOR_OPEN],
+    [41, DOOR_CLOSED], // leaves without a lock
+  ]);
+  const sent = await simulate(events, 0, 300);
+  assert.deepEqual(sent.map(([m]) => m), [24, 50.5, 80.5, 140.5]);
+});
+
+test('back at the car after the last reminder: a new lock starts a new series', async () => {
+  const events = lockedTrip([[200, { [LOCK]: 'UNLOCKED' }], [201, { [LOCK]: 'SECURED' }]]);
+  const sent = await simulate(events, 0, 400);
+  assert.deepEqual(sent.map(([m]) => m), [24, 54, 114, 201, 231, 291]);
+});
+
+test('a door that stays open counts once, also when the car repeats it in each message', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, { [DRIVER_DOOR]: true }],
+    [5, { [DRIVER_DOOR]: true, [WIN]: 'CLOSED' }], // the car repeats the open door
+    [8, { [DRIVER_DOOR]: true }],
+  ];
+  const sent = await simulate(events, 0, 60);
+  assert.equal(sent[0][0], 11, 'not moved to 18 by the repeated value');
+  assert.match(sent[0][1], /front left door/);
+  assert.deepEqual(sent.map(([m]) => m), [11, 41], 'the repeated value is no return to the car');
 });

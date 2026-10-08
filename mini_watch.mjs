@@ -460,6 +460,8 @@ export class Watcher {
     this.kmChangedAt = 0; // time the odometer last increased
     this.lastDriverDoorAt = 0; // time the driver door last opened (to get in or to get out)
     this.lastDoorAt = 0; // time any door last opened
+    this.lastUnlockAt = 0; // time the lock last changed to UNLOCKED
+    this.doorOpen = new Map(); // door attribute -> last value. The car repeats an open door in each message.
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
     this.lockChangedAt = 0;
     this.driveEndAt = 0; // time the lock left LOCKED (the car unlocks itself when you park)
@@ -507,6 +509,7 @@ export class Watcher {
       kmChangedAt: this.kmChangedAt,
       lastDriverDoorAt: this.lastDriverDoorAt,
       lastDoorAt: this.lastDoorAt,
+      lastUnlockAt: this.lastUnlockAt,
       lockStatus: this.lockStatus,
       lockChangedAt: this.lockChangedAt,
       driveEndAt: this.driveEndAt,
@@ -529,6 +532,7 @@ export class Watcher {
     this.kmChangedAt = snap.kmChangedAt ?? 0;
     this.lastDriverDoorAt = snap.lastDriverDoorAt ?? 0;
     this.lastDoorAt = snap.lastDoorAt ?? 0;
+    this.lastUnlockAt = snap.lastUnlockAt ?? 0;
     this.lockStatus = snap.lockStatus ?? null;
     this.lockChangedAt = snap.lockChangedAt ?? 0;
     this.driveEndAt = snap.driveEndAt ?? 0;
@@ -549,11 +553,12 @@ export class Watcher {
     return true;
   }
 
-  // The wait time starts at the latest of: the last driver door opening, the last odometer increase,
-  // the end of a drive by the lock (LOCKED to UNLOCKED). The driver door also opens when the driver gets in. The car sends the first odometer value
-  // 3 to 7 minutes after that. So the wait (alert_after_min, 10 minutes) must be longer than that.
+  // The wait time starts at the latest of: the last door opening, the last unlock, the last odometer
+  // increase, the end of a drive by the lock (LOCKED to UNLOCKED). The driver door also opens when the
+  // driver gets in. The car sends the first odometer value 3 to 7 minutes after that. So the wait
+  // (alert_after_min, 10 minutes) must be longer than that.
   parkStart() {
-    return Math.max(this.parkedSince ?? 0, this.lastDriverDoorAt, this.kmChangedAt, this.driveEndAt);
+    return Math.max(this.parkedSince ?? 0, this.lastDoorAt, this.lastUnlockAt, this.kmChangedAt, this.driveEndAt);
   }
 
   // The start of the park after the last drive: the first lock from outside, if it came in 10 minutes
@@ -588,12 +593,16 @@ export class Watcher {
         if (status && status !== this.lockStatus) {
           if (this.lockStatus === 'LOCKED') this.driveEndAt = at;
           if (status === 'LOCKED') this.parkLockAt = this.parkDoorAt = 0; // A drive starts.
+          if (status === 'UNLOCKED') this.lastUnlockAt = at;
           if (status === 'SECURED' && !this.parkLockAt) this.parkLockAt = at;
           this.lockStatus = status;
           this.lockChangedAt = at;
         }
       }
-      if (ANY_DOOR.test(name) && parseBool(item?.value) === true) {
+      // A door opening counts once, when the value changes to true. The car repeats an open door in each message.
+      const opened = ANY_DOOR.test(name) && parseBool(item?.value) === true && this.doorOpen.get(name) !== true;
+      if (ANY_DOOR.test(name)) this.doorOpen.set(name, parseBool(item?.value));
+      if (opened) {
         this.lastDoorAt = Math.max(this.lastDoorAt, at);
         if (name === DRIVER_DOOR) {
           this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
@@ -656,6 +665,13 @@ export class Watcher {
         .map(([name]) => name),
     );
     this.notified = new Set([...this.notified].filter((name) => this.openSince.has(name))); // Forget closed parts.
+    // Back at the car: a door opened or the car was unlocked after the first notification of the series.
+    // The remaining reminders stop. A part that is still open gives a new series: at once when the car
+    // is locked again, else after the normal wait.
+    if (this.notified.size && Math.max(this.lastDoorAt, this.lastUnlockAt) > this.firstNotifyAt) {
+      this.notified = new Set();
+      this.urgent = true;
+    }
     if (this.openSince.size === 0) {
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
