@@ -39,7 +39,7 @@ Test edilen araç kontak, hareket ve hız verisi yollamıyor. Program, aracın y
 | Programda hiç kilometre verisi yok | Bir parça 10 dakikadır açıksa bildirim düşer. |
 | Kilit `LOCKED` ve sonrasında hiçbir kapı açılmadı | Araç yolda. Araç yola çıkınca kendini kilitler. Bildirim yok. |
 | Kilit `LOCKED` durumundan `UNLOCKED` durumuna geçti | Sürüş bitti. Araç park edince kilidi kendisi açar. Bekleme baştan başlar. |
-| Son kapı açılışından sonra kilit `SECURED` | Araç park edildi ve dışarıdan kilitlendi. Kilitlerken açık olan parça 2 dakika sonra bildirim üretir. |
+| Son kapı açılışından sonra kilit `SECURED` | Araç park edildi ve dışarıdan kilitlendi. Kilitlerken açık olan parça hemen bildirim üretir. |
 
 Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır.
 
@@ -48,7 +48,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 | Kural | Varsayılan | `config.json` ayarı |
 |---|---|---|
 | Sürücü kapısı son açıldıktan sonraki bekleme | 10 dakika | `alert_after_min` |
-| Aracı dışarıdan kilitledikten sonraki bekleme | 2 dakika | `alert_after_lock_min` |
+| Aracı dışarıdan kilitledikten sonraki bekleme | 0 (hemen) | `alert_after_lock_min` |
 | Parça hâlâ açıksa ilk hatırlatma | 60 dakika | `remind_every_min` |
 | İki hatırlatma arasındaki en uzun süre | 480 dakika (8 saat) | `remind_max_min` |
 | Kilometre bu kadar durursa araç park sayılır | 30 dakika | `park_after_idle_min` |
@@ -57,10 +57,11 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 | Araçtan veri gelmezse bildirim | kapalı | `silence_alert_hours` (örnek: `72`) |
 
 - **Neden 10 dakika?** Sürücü kapısı biniş sırasında da açılır. Test aracında ilk kilometre verisi, binişten 3 ile 7 dakika sonra geldi. 10 dakikalık bekleme bu süreyi karşılar. Sayaç, sürücü kapısı her açıldığında baştan başlar.
-- **Neden kilitten 2 dakika sonra?** Aracı kilitlerken açık olan parça unutulmuş bir parçadır. 2 dakika, kilit düğmesine basılı tutarsan camların ve cam tavanın kapanmasına zaman tanır (konfor kapanması). Kilitten sonra açılan bir parça, örneğin bagaj, normal 10 dakikalık beklemeye uyar.
+- **Kilitlenince hemen.** Aracı kilitlerken açık olan parça unutulmuş bir parçadır. Program 15 saniyede bir kontrol eder, bildirim en geç 15 saniyede gelir. O sırada hâlâ aracın yakınındasın. Kilitten sonra açılan bir parça, örneğin bagaj, normal 10 dakikalık beklemeye uyar.
+- **Konfor kapanması.** Camları ve cam tavanı kilit düğmesine basılı tutarak kapatıyorsan önce "açık kaldı", hemen ardından "her şey kapandı" bildirimi gelebilir. Bunu istemiyorsan `alert_after_lock_min` değerini 1 yap.
 - **Hatırlatmalar.** Her hatırlatma bir öncekinin iki katı bekler: 1 saat, 2 saat, 4 saat, sonra 8 saat. Gece boyunca açık kalan bir parça saat başı bildirim yollamaz.
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. En eski açılan parça başta durur.
-- **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa bu saatleri korur. `state.json` dosyasını ve son 24 saatin mesajlarını okur. Program 24 saatten uzun kapalı kaldıysa, daha uzun süredir açık olan bir parçanın saati okumanın başladığı an olarak görünür.
+- **Her parçanın saati.** Bildirimde "13:48'den beri" gibi bir saat görürsün. Bu saat, programın o parçayı ilk kez açık gördüğü andır. Parça parktan önce de açıksa (sürüş sırasında veya önceki bir günden beri) saat, parkın başladığı andır: dışarıdan kilitleme ya da sürücünün indiği an. 10 dakikadan daha sonra yapılan bir kilit bu saati değiştirmez. Parça önceki bir günden beri açıksa tarih de yazar. Örnek: "6 Eki 13:48'den beri". Program yeniden başlarsa bu saatleri korur. `state.json` dosyasını ve son 24 saatin mesajlarını okur. Program 24 saatten uzun kapalı kaldıysa, daha uzun süredir açık olan bir parçanın saati okumanın başladığı an olarak görünür.
 - **Yeni bir parça açılırsa.** Bekleme süresi dolunca yeni bir bildirim düşer. Bu bildirim de tüm açık parçaları sıralar.
 - **Hepsini kapatırsan.** Tek bir mesaj gelir ve her şeyin kapandığını söyler. Bu mesaj, daha önce bir bildirim gelmişse gelir. Program bu mesajı yalnızca bir parçanın kapandığını gördüğünde yollar. Veri gelmemesi "kapandı" anlamına gelmez. Yalnızca `CLOSED` ve `false` değerleri kapalı sayılır. Bilinmeyen bir değer durumu değiştirmez.
 - **Yeniden yola çıkarsan.** Program eski bildirimi unutur. Bir sonraki parkta yeni bir bildirim gelebilir.

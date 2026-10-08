@@ -4,7 +4,7 @@
   "language": "en",
   "timezone": "",
   "alert_after_min": 10,
-  "alert_after_lock_min": 2,
+  "alert_after_lock_min": 0,
   "remind_every_min": 60,
   "remind_max_min": 480,
   "park_after_idle_min": 30

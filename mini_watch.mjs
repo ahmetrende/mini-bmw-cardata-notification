@@ -83,6 +83,9 @@ const ANY_DOOR = /^vehicle\.cabin\.door\.row\d\.(driver|passenger)\.isOpen$/;
 // drive) and SECURED (locked from outside with the key or the app).
 const LOCK = 'vehicle.cabin.door.status';
 const DRIVING_STALE_S = 2 * 3600;
+// The lock time is the start of the park only when the lock came soon after the driver got out.
+// A lock hours later (for example with the app) does not move the time in the text.
+const PARK_LOCK_WINDOW_S = 600;
 
 // Text that the user sees on the phone. Log lines are always in English.
 const TEXT = {
@@ -185,7 +188,7 @@ export const DEFAULT_CONFIG = {
   language: 'en',
   timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
   alert_after_min: 10,
-  alert_after_lock_min: 2, // Wait after the car is locked from outside, for a part that was open at that time.
+  alert_after_lock_min: 0, // Wait after the car is locked from outside, for a part that was open at that time. 0 = at once.
   remind_every_min: 60,
   remind_max_min: 480,
   park_after_idle_min: 30,
@@ -449,6 +452,9 @@ export class Watcher {
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
     this.lockChangedAt = 0;
     this.driveEndAt = 0; // time the lock left LOCKED (the car unlocks itself when you park)
+    // The start of the park after the last drive, for the time in the text. It does not move until the next drive.
+    this.parkLockAt = 0; // the first SECURED after the last drive
+    this.parkDoorAt = 0; // the first driver door opening after the last drive (the driver gets out)
     this.notifyFailures = 0; // failed notifications in a row
     this.retryAt = 0; // after a failed notification, the next try waits until this time
     this.unknownSeen = new Set(); // unknown values that are already in the log
@@ -493,6 +499,8 @@ export class Watcher {
       lockStatus: this.lockStatus,
       lockChangedAt: this.lockChangedAt,
       driveEndAt: this.driveEndAt,
+      parkLockAt: this.parkLockAt,
+      parkDoorAt: this.parkDoorAt,
       notified: [...this.notified],
       lastNotify: this.lastNotify,
       reminders: this.reminders,
@@ -512,6 +520,8 @@ export class Watcher {
     this.lockStatus = snap.lockStatus ?? null;
     this.lockChangedAt = snap.lockChangedAt ?? 0;
     this.driveEndAt = snap.driveEndAt ?? 0;
+    this.parkLockAt = snap.parkLockAt ?? 0;
+    this.parkDoorAt = snap.parkDoorAt ?? 0;
   }
 
   // After the history replay. Ignore a notification memory that is older than the last odometer
@@ -533,6 +543,15 @@ export class Watcher {
     return Math.max(this.parkedSince ?? 0, this.lastDriverDoorAt, this.kmChangedAt, this.driveEndAt);
   }
 
+  // The start of the park after the last drive: the first lock from outside, if it came in 10 minutes
+  // after the driver got out. Else the time the driver got out. 0 when the program saw no drive
+  // (then the text shows the time the part opened).
+  parkBegin() {
+    if (!this.kmChangedAt && !this.driveEndAt) return 0;
+    const lockSoon = this.parkLockAt && (!this.parkDoorAt || this.parkLockAt - this.parkDoorAt <= PARK_LOCK_WINDOW_S);
+    return lockSoon ? this.parkLockAt : this.parkDoorAt || this.parkLockAt;
+  }
+
   // "at" is the time of the message. A replay at startup passes the original time.
   onData(data, at = this.clock()) {
     this.dirty = true;
@@ -544,6 +563,7 @@ export class Watcher {
         if (Number.isFinite(km)) {
           if (this.lastKm !== null && km > this.lastKm) {
             this.kmChangedAt = at;
+            this.parkLockAt = this.parkDoorAt = 0; // The car drives. The next park starts later.
             this.notified = new Set(); // A new park, a new notification.
             this.alerted = false;
             this.reminders = 0;
@@ -554,13 +574,18 @@ export class Watcher {
         const status = String(item?.value ?? '').toUpperCase();
         if (status && status !== this.lockStatus) {
           if (this.lockStatus === 'LOCKED') this.driveEndAt = at;
+          if (status === 'LOCKED') this.parkLockAt = this.parkDoorAt = 0; // A drive starts.
+          if (status === 'SECURED' && !this.parkLockAt) this.parkLockAt = at;
           this.lockStatus = status;
           this.lockChangedAt = at;
         }
       }
       if (ANY_DOOR.test(name) && parseBool(item?.value) === true) {
         this.lastDoorAt = Math.max(this.lastDoorAt, at);
-        if (name === DRIVER_DOOR) this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
+        if (name === DRIVER_DOOR) {
+          this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
+          if (!this.parkDoorAt) this.parkDoorAt = at;
+        }
       }
       if (!WATCHED.some((pattern) => pattern.test(name))) continue;
       const value = String(item?.value ?? '').toUpperCase();
@@ -603,8 +628,9 @@ export class Watcher {
     if (this.clock() < this.retryAt) return; // Wait after a failed notification.
     const t = textFor(this.cfg);
     const wait = this.cfg.alert_after_min * 60;
-    // A part that was open when the car was locked from outside: notify after alert_after_lock_min.
-    // The short wait lets the windows and the sunroof close (comfort close while you hold the lock button).
+    // A part that was open when the car was locked from outside: notify after alert_after_lock_min
+    // (0 = at the next check, at most 15 seconds). With 1 minute, the windows and the sunroof can close
+    // first (comfort close while you hold the lock button).
     const lockWait = this.cfg.alert_after_lock_min * 60;
     const secured = this.isSecured();
     const due = (since) =>
@@ -635,10 +661,14 @@ export class Watcher {
     const interval = Math.min(this.cfg.remind_every_min * 2 ** this.reminders, this.cfg.remind_max_min) * 60;
     const remind = this.clock() - this.lastNotify >= interval;
     if (added || remind) {
-      // The oldest open part comes first. Each part shows the time the program first saw it open.
+      // The oldest open part comes first. Each part shows the time the program first saw it open,
+      // or the start of this park if the part was already open before it (open during the drive or
+      // since an earlier day). The start of the park is the first lock after the drive (see parkBegin).
+      const parkBegin = this.parkBegin();
+      const shownSince = (name) => Math.max(this.openSince.get(name), parkBegin);
       const items = [...current]
-        .sort((a, b) => this.openSince.get(a) - this.openSince.get(b))
-        .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(this.openSince.get(name), this.cfg, this.clock()))}`)
+        .sort((a, b) => shownSince(a) - shownSince(b) || this.openSince.get(a) - this.openSince.get(b))
+        .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(shownSince(name), this.cfg, this.clock()))}`)
         .join(', ');
       const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
       const sent = await ntfy(this.cfg, title, t.openBody(items));

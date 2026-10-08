@@ -75,8 +75,9 @@ test('no notification while driving, one combined notification after the driver 
   at(25);
   const lines = await logsDuring(() => watcher.check());
   assert.equal(lines.length, 1, 'one combined notification');
-  // The driver door is still open, so it is in the list too. The oldest open part comes first.
-  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\) since 00:00, front right window since 00:01, front left door since 00:15/);
+  // The driver door is still open, so it is in the list too. Parts that were open during the drive
+  // show the start of the park (the driver door at 00:15). The oldest open part still comes first.
+  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\) since 00:15, front right window since 00:15, front left door since 00:15/);
 });
 
 test('a new drive resets the notification memory', async () => {
@@ -666,11 +667,12 @@ const LOCK = 'vehicle.cabin.door.status';
 const PASSENGER_DOOR = 'vehicle.cabin.door.row1.passenger.isOpen';
 const TRUNK = 'vehicle.body.trunk.isOpen';
 // A real drive of the tested car: unlock, get in, the car locks itself, drive, it unlocks at the end, get out, lock.
+// The sunroof opens after the driver gets in.
 const lockedTrip = (extra = []) => [
-  [0, { [KM]: 100, [TILT]: 'OPEN', [LOCK]: 'SECURED' }],
+  [0, { [KM]: 100, [LOCK]: 'SECURED' }],
   [1, { [LOCK]: 'UNLOCKED' }],
   [1.5, DOOR_OPEN],
-  [1.8, DOOR_CLOSED],
+  [1.8, { [DRIVER_DOOR]: false, [TILT]: 'OPEN' }],
   [2, { [LOCK]: 'LOCKED' }],
   ...drive(6, 21, 101),
   [22, { [LOCK]: 'UNLOCKED' }],
@@ -680,19 +682,50 @@ const lockedTrip = (extra = []) => [
   ...extra,
 ];
 
-test('lock: a part that is open when you lock the car gives a notification 2 minutes later', async () => {
+test('lock: a part that is open when you lock the car gives a notification at once', async () => {
   const sent = await simulate(lockedTrip(), 0, 40);
   assert.equal(sent.length, 1);
-  assert.equal(sent[0][0], 26, 'SECURED at 24 + 2 minutes (without the lock: 23 + 10 = 33)');
-  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
+  assert.equal(sent[0][0], 24, 'at the lock (without the lock: 23 + 10 = 33)');
+  // The sunroof was open since minute 1.8, during the drive. The text shows the lock time.
+  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24$/);
 });
 
-test('lock: the sunroof closes within 2 minutes after the lock (comfort close), no notification', async () => {
-  assert.deepEqual(await simulate(lockedTrip([[25, { [TILT]: 'CLOSED' }]]), 0, 60), []);
+test('lock: with alert_after_lock_min 2, a comfort close after the lock gives no notification', async () => {
+  const events = lockedTrip([[25, { [TILT]: 'CLOSED' }]]);
+  assert.deepEqual(await simulate(events, 0, 60, { alert_after_lock_min: 2 }), []);
+  const sent = await simulate(lockedTrip(), 0, 40, { alert_after_lock_min: 2 });
+  assert.equal(sent[0][0], 26);
+});
+
+test('the text shows the start of the park for a part that was open since an earlier day', async () => {
+  const day = 24 * 60;
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }], // left open yesterday
+    [1, DOOR_OPEN],
+    [1.2, DOOR_CLOSED],
+    [day, { [LOCK]: 'UNLOCKED' }], // next day: a drive
+    [day + 1, DOOR_OPEN],
+    [day + 1.2, DOOR_CLOSED],
+    [day + 2, { [LOCK]: 'LOCKED' }],
+    ...drive(day + 5, day + 20, 101),
+    [day + 21, { [LOCK]: 'UNLOCKED' }],
+    [day + 22, DOOR_OPEN],
+    [day + 22.2, DOOR_CLOSED],
+    [day + 23, { [LOCK]: 'SECURED' }],
+  ];
+  const sent = await simulate(events, day - 1, day + 30, { remind_every_min: 600 });
+  assert.equal(sent.length, 2, 'the alert of yesterday, then the alert of today');
+  assert.match(sent[1][1], /MINI left open: Open: sunroof \(tilted\) since 00:23$/, 'not "since yesterday 00:00"');
+});
+
+test('the text keeps the own time of a part that opened after the park', async () => {
+  const events = lockedTrip([[23.5, { [TILT]: 'CLOSED' }], [30, { [TRUNK]: true }]]);
+  const sent = await simulate(events, 0, 60);
+  assert.match(sent[0][1], /trunk since 00:30$/);
 });
 
 test('lock: a part that opens after the lock follows the normal wait', async () => {
-  const events = lockedTrip([[24.5, { [TILT]: 'CLOSED' }], [30, { [TRUNK]: true }]]);
+  const events = lockedTrip([[23.5, { [TILT]: 'CLOSED' }], [30, { [TRUNK]: true }]]);
   const sent = await simulate(events, 0, 60);
   assert.equal(sent.length, 1);
   assert.equal(sent[0][0], 40, 'trunk opened at 30 + 10 minutes');
@@ -731,4 +764,19 @@ test('lock: LOCKED and then a passenger door opens, the car does not count as dr
 test('lock: alert_after_lock_min must be a number of minutes', () => {
   checkConfig({ ...DEFAULT_CONFIG, alert_after_lock_min: 0 });
   assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, alert_after_lock_min: -1 }), /alert_after_lock_min/);
+});
+
+test('the text uses the time the driver got out when the lock comes hours later', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.2, { [DRIVER_DOOR]: false, [TILT]: 'OPEN' }],
+    ...drive(5, 20, 101),
+    [22, DOOR_OPEN], // the driver gets out, no lock
+    [22.2, DOOR_CLOSED],
+    [180, { [LOCK]: 'SECURED' }], // a lock with the app, hours later
+  ];
+  const sent = await simulate(events, 0, 200, { remind_every_min: 600 });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0][1], /sunroof \(tilted\) since 00:22$/);
 });

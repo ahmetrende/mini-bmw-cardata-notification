@@ -58,7 +58,7 @@ Found a problem, or do you need a new event? Open an issue in this repository.
 
 | Situation | Notification |
 |---|---|
-| You park, leave the car, and a part stays open | After 10 minutes. After 2 minutes when you lock the car. |
+| You park, leave the car, and a part stays open | After 10 minutes. At once when you lock the car. |
 | A part is still open | Reminders after 1, 2 and 4 hours, then every 8 hours |
 | You close all parts | One message that says everything is closed |
 | You drive | No notification |

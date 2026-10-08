@@ -69,7 +69,7 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 
 | Öznitelik | Ne işe yarar? |
 |---|---|
-| `vehicle.cabin.door.status` | Merkezi kilit. Önerilir. Aracı kilitledikten 2 dakika sonra bildirim gelir. Program aracın yolda olduğunu da anlar. Test edilen araç yolluyor. |
+| `vehicle.cabin.door.status` | Merkezi kilit. Önerilir. Aracı kilitlediğin anda bildirim gelir. Program aracın yolda olduğunu da anlar. Test edilen araç yolluyor. |
 | `vehicle.drivetrain.engine.isIgnitionOn` | Kontak durumu. Test edilen araç yollamadı. |
 | `vehicle.isMoving` | Hareket durumu. Test edilen araç yollamadı. |
 | `vehicle.cabin.sunroof.overallStatus` | Cam tavanın genel durumu. Program yalnızca kaydeder. |

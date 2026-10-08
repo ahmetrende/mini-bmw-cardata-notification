@@ -69,7 +69,7 @@ Do **not** press **Authenticate device** now. You use that button in Step 3, aft
 
 | Attribute | Reason |
 |---|---|
-| `vehicle.cabin.door.status` | Central lock. Recommended. A notification comes 2 minutes after you lock the car. The program also knows when the car drives. The tested car sends it. |
+| `vehicle.cabin.door.status` | Central lock. Recommended. A notification comes as soon as you lock the car. The program also knows when the car drives. The tested car sends it. |
 | `vehicle.drivetrain.engine.isIgnitionOn` | Ignition state. The tested car did not send it. |
 | `vehicle.isMoving` | Motion state. The tested car did not send it. |
 | `vehicle.cabin.sunroof.overallStatus` | General sunroof state. The program only records it. |
