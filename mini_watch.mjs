@@ -96,6 +96,11 @@ const TEXT = {
     positions: { 'row1.driver': 'front left', 'row1.passenger': 'front right', 'row2.driver': 'rear left', 'row2.passenger': 'rear right' },
     window: 'window',
     door: 'door',
+    windows: 'windows',
+    doors: 'doors',
+    allWindows: 'all windows',
+    allDoors: 'all doors',
+    rowPair: { row1: 'left and right front', row2: 'left and right rear' },
     sunroof: 'sunroof',
     sunroofTilt: 'sunroof (tilted)',
     trunk: 'trunk',
@@ -116,6 +121,11 @@ const TEXT = {
     positions: { 'row1.driver': 'sol ön', 'row1.passenger': 'sağ ön', 'row2.driver': 'sol arka', 'row2.passenger': 'sağ arka' },
     window: 'cam',
     door: 'kapı',
+    windows: 'cam',
+    doors: 'kapı',
+    allWindows: 'tüm camlar',
+    allDoors: 'tüm kapılar',
+    rowPair: { row1: 'sol ve sağ ön', row2: 'sol ve sağ arka' },
     sunroof: 'cam tavan',
     sunroofTilt: 'cam tavan (aralık)',
     trunk: 'bagaj',
@@ -418,6 +428,48 @@ export function label(name, cfg = {}) {
   return pos ? `${t.positions[pos]} ${kind}` : name;
 }
 
+const POSITION_ORDER = ['row1.driver', 'row1.passenger', 'row2.driver', 'row2.passenger'];
+
+// The windows (or the doors) of a group, with the name once: "left and right front windows",
+// "front left, front right and rear left windows", "all windows".
+function positionalPhrase(kind, keys, t) {
+  const sorted = POSITION_ORDER.filter((key) => keys.has(key));
+  const noun = kind === 'window' ? t.window : t.door;
+  const plural = kind === 'window' ? t.windows : t.doors;
+  if (sorted.length === 4) return kind === 'window' ? t.allWindows : t.allDoors;
+  if (sorted.length === 1) return `${t.positions[sorted[0]]} ${noun}`;
+  const sameRow = sorted.length === 2 && sorted[0].slice(0, 4) === sorted[1].slice(0, 4);
+  if (sameRow) return `${t.rowPair[sorted[0].slice(0, 4)]} ${plural}`;
+  return `${joinList(sorted.map((key) => t.positions[key]), t.and)} ${plural}`;
+}
+
+// The names of the parts in one group: windows together, doors together, then the other parts.
+// Order: the first part of each kind decides.
+export function describeParts(names, cfg = {}) {
+  const t = textFor(cfg);
+  const entries = [];
+  const positional = {};
+  const seen = new Set();
+  for (const name of names) {
+    const found = /^vehicle\.cabin\.(window|door)\.(row\d\.(?:driver|passenger))\./.exec(name);
+    if (found && t.positions[found[2]]) {
+      const [, kind, key] = found;
+      if (!positional[kind]) {
+        positional[kind] = new Set();
+        entries.push({ kind });
+      }
+      positional[kind].add(key);
+    } else {
+      const text = label(name, cfg);
+      if (!seen.has(text)) {
+        seen.add(text);
+        entries.push({ text });
+      }
+    }
+  }
+  return joinList(entries.map((entry) => entry.text ?? positionalPhrase(entry.kind, positional[entry.kind], t)), t.and);
+}
+
 const parseBool = (value) => {
   const text = String(value ?? '').toUpperCase();
   if (text === 'TRUE') return true;
@@ -714,18 +766,19 @@ export class Watcher {
       // since an earlier day). The start of the park is the first lock after the drive (see parkBegin).
       const parkBegin = this.parkBegin();
       const shownSince = (name) => Math.max(this.openSince.get(name), parkBegin);
-      // Parts with the same time share it: "front left door and rear right door since 16:54".
-      // A name shows once, with its earliest time (the trunk has two attributes).
-      const groups = new Map(); // time text -> part names
+      // Parts with the same time share it, and the windows (or the doors) of a group share their name:
+      // "left and right front windows since 16:54". A part shows once, with its earliest time
+      // (the trunk has two attributes).
+      const groups = new Map(); // time text -> attribute names
       const shown = new Set();
       for (const name of [...current].sort((a, b) => shownSince(a) - shownSince(b) || this.openSince.get(a) - this.openSince.get(b))) {
         const text = label(name, this.cfg);
         if (shown.has(text)) continue;
         shown.add(text);
         const when = t.since(formatTime(shownSince(name), this.cfg, this.clock()));
-        groups.set(when, [...(groups.get(when) ?? []), text]);
+        groups.set(when, [...(groups.get(when) ?? []), name]);
       }
-      const items = [...groups].map(([when, texts]) => `${joinList(texts, t.and)} ${when}`).join(', ');
+      const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg)} ${when}`).join(', ');
       const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
       const sent = await ntfy(this.cfg, title, t.openBody(items));
       if (!this.notifyResult(sent)) return;

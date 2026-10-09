@@ -16,6 +16,7 @@ import {
   checkTopic,
   formatTime,
   label,
+  describeParts,
   parseStreamMessage,
   readBody,
   replayRecent,
@@ -961,7 +962,7 @@ test('parts with the same time are grouped, groups are separated by a comma', as
   watcher.onData(msg({ [WIN]: 'OPEN' }), t0 + 3600 + 20); // 20 seconds later: the same minute
   at(120);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /^\[ntfy off\] MINI left open: Open: sunroof \(tilted\) since 00:00, front left door, rear right door and front right window since 01:00$/);
+  assert.match(lines[0], /^\[ntfy off\] MINI left open: Open: sunroof \(tilted\) since 00:00, front left and rear right doors and front right window since 01:00$/);
 });
 
 test('Turkish: parts with the same time are grouped with "ve"', async () => {
@@ -971,7 +972,7 @@ test('Turkish: parts with the same time are grouped with "ve"', async () => {
   watcher.onData(msg({ [DRIVER_DOOR]: true, [REAR_RIGHT_DOOR]: true }), t0 + 3600);
   at(120);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /Açık: cam tavan \(aralık\) 00:00'dan beri, sol ön kapı ve sağ arka kapı 01:00'den beri$/);
+  assert.match(lines[0], /Açık: cam tavan \(aralık\) 00:00'dan beri, sol ön ve sağ arka kapı 01:00'den beri$/);
 });
 
 test('a name shows once: the trunk has two attributes', async () => {
@@ -989,4 +990,51 @@ test('one part: no list word', async () => {
   watcher.onData(msg({ [TILT]: 'OPEN' }), at(0));
   at(20);
   assert.match((await logsDuring(() => watcher.check()))[0], /Open: sunroof \(tilted\) since 00:00$/);
+});
+
+// ---- The windows and the doors of a group share their name ----
+
+const W = (row, side) => `vehicle.cabin.window.${row}.${side}.status`;
+const D = (row, side) => `vehicle.cabin.door.${row}.${side}.isOpen`;
+const en = { language: 'en' };
+const tr = { language: 'tr' };
+
+test('describeParts: left and right of one row share the name (Turkish)', () => {
+  assert.equal(describeParts([W('row1', 'driver'), W('row1', 'passenger')], tr), 'sol ve sağ ön cam');
+  assert.equal(describeParts([D('row2', 'passenger'), D('row2', 'driver')], tr), 'sol ve sağ arka kapı');
+});
+
+test('describeParts: left and right of one row share the name (English)', () => {
+  assert.equal(describeParts([W('row1', 'driver'), W('row1', 'passenger')], en), 'left and right front windows');
+  assert.equal(describeParts([D('row2', 'driver'), D('row2', 'passenger')], en), 'left and right rear doors');
+});
+
+test('describeParts: other combinations list the positions and name the kind once', () => {
+  assert.equal(describeParts([W('row1', 'driver'), W('row2', 'driver')], tr), 'sol ön ve sol arka cam');
+  assert.equal(describeParts([W('row1', 'passenger'), W('row1', 'driver'), W('row2', 'driver')], tr), 'sol ön, sağ ön ve sol arka cam');
+  assert.equal(describeParts([W('row1', 'passenger'), W('row1', 'driver'), W('row2', 'driver')], en), 'front left, front right and rear left windows');
+  assert.equal(describeParts([D('row1', 'driver')], tr), 'sol ön kapı');
+  assert.equal(describeParts([D('row1', 'driver')], en), 'front left door');
+});
+
+test('describeParts: all four', () => {
+  const four = (f) => [f('row1', 'driver'), f('row1', 'passenger'), f('row2', 'driver'), f('row2', 'passenger')];
+  assert.equal(describeParts(four(W), tr), 'tüm camlar');
+  assert.equal(describeParts(four(D), en), 'all doors');
+});
+
+test('describeParts: kinds together, the first part decides the order, other parts keep their name', () => {
+  const sunroofTilt = 'vehicle.cabin.sunroof.tiltStatus';
+  assert.equal(describeParts([D('row1', 'driver'), W('row1', 'passenger'), W('row1', 'driver')], tr), 'sol ön kapı ve sol ve sağ ön cam');
+  assert.equal(describeParts([sunroofTilt, W('row1', 'driver'), W('row1', 'passenger'), TRUNK], tr), 'cam tavan (aralık), sol ve sağ ön cam ve bagaj');
+  assert.equal(describeParts([TRUNK, 'vehicle.body.trunk.door.isOpen'], en), 'trunk');
+});
+
+test('a notification: the two front windows and the driver door, one time', async () => {
+  const { watcher, at } = virtualWatcher({ language: 'tr' });
+  const t0 = at(0);
+  watcher.onData(msg({ [W('row1', 'driver')]: 'OPEN', [W('row1', 'passenger')]: 'OPEN', [DRIVER_DOOR]: true }), t0);
+  at(20);
+  const lines = await logsDuring(() => watcher.check());
+  assert.match(lines[0], /Açık: sol ve sağ ön cam ve sol ön kapı 00:00'dan beri$/);
 });
