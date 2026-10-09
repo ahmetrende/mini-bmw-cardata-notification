@@ -77,7 +77,7 @@ test('no notification while driving, one combined notification after the driver 
   assert.equal(lines.length, 1, 'one combined notification');
   // The driver door is still open, so it is in the list too. Parts that were open during the drive
   // show the start of the park (the driver door at 00:15). The oldest open part still comes first.
-  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\) since 00:15, front right window since 00:15, front left door since 00:15/);
+  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\), front right window and front left door since 00:15$/);
 });
 
 test('a new drive resets the notification memory', async () => {
@@ -148,7 +148,7 @@ test('Turkish text with language "tr"', async () => {
   watcher.onData(msg({ [WIN]: 'OPEN', [TILT]: 'OPEN' }), at(0));
   at(10);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /MINI açık kaldı: Açık: sağ ön cam 00:00'dan beri, cam tavan \(aralık\) 00:00'dan beri/);
+  assert.match(lines[0], /MINI açık kaldı: Açık: sağ ön cam ve cam tavan \(aralık\) 00:00'dan beri$/);
 });
 
 test('label names the part in both languages', () => {
@@ -946,4 +946,47 @@ test('closed after a drive: an alert is forgotten at an odometer increase when n
   watcher.alerted = true;
   watcher.onData(msg({ [KM]: 102 }), at(3));
   assert.equal(watcher.alerted, true, 'a part is open: the alert stays');
+});
+
+// ---- One time for parts that share it ----
+
+const REAR_RIGHT_DOOR = 'vehicle.cabin.door.row2.passenger.isOpen';
+const TRUNK_DOOR = 'vehicle.body.trunk.door.isOpen';
+
+test('parts with the same time are grouped, groups are separated by a comma', async () => {
+  const { watcher, at } = virtualWatcher();
+  const t0 = at(0);
+  watcher.onData(msg({ [TILT]: 'OPEN' }), t0);
+  watcher.onData(msg({ [DRIVER_DOOR]: true, [REAR_RIGHT_DOOR]: true }), t0 + 3600);
+  watcher.onData(msg({ [WIN]: 'OPEN' }), t0 + 3600 + 20); // 20 seconds later: the same minute
+  at(120);
+  const lines = await logsDuring(() => watcher.check());
+  assert.match(lines[0], /^\[ntfy off\] MINI left open: Open: sunroof \(tilted\) since 00:00, front left door, rear right door and front right window since 01:00$/);
+});
+
+test('Turkish: parts with the same time are grouped with "ve"', async () => {
+  const { watcher, at } = virtualWatcher({ language: 'tr' });
+  const t0 = at(0);
+  watcher.onData(msg({ [TILT]: 'OPEN' }), t0);
+  watcher.onData(msg({ [DRIVER_DOOR]: true, [REAR_RIGHT_DOOR]: true }), t0 + 3600);
+  at(120);
+  const lines = await logsDuring(() => watcher.check());
+  assert.match(lines[0], /Açık: cam tavan \(aralık\) 00:00'dan beri, sol ön kapı ve sağ arka kapı 01:00'den beri$/);
+});
+
+test('a name shows once: the trunk has two attributes', async () => {
+  const { watcher, at } = virtualWatcher();
+  const t0 = at(0);
+  watcher.onData(msg({ [TRUNK]: true }), t0);
+  watcher.onData(msg({ [TRUNK_DOOR]: true }), t0 + 600);
+  at(60);
+  const lines = await logsDuring(() => watcher.check());
+  assert.match(lines[0], /Open: trunk since 00:00$/);
+});
+
+test('one part: no list word', async () => {
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [TILT]: 'OPEN' }), at(0));
+  at(20);
+  assert.match((await logsDuring(() => watcher.check()))[0], /Open: sunroof \(tilted\) since 00:00$/);
 });

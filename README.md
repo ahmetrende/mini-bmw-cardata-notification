@@ -63,7 +63,7 @@ Found a problem, or do you need a new event? Open an issue in this repository.
 | You close all parts | One message that says everything is closed |
 | You drive | No notification |
 
-One notification lists all open parts. Each part shows the time it opened. You change the wait times in `config.json`.
+One notification lists all open parts. Parts with the same time share it. You change the wait times in `config.json`.
 
 ## Limits
 

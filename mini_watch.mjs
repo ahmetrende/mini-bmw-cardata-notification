@@ -103,6 +103,7 @@ const TEXT = {
     openTitle: 'MINI left open',
     stillOpenTitle: 'MINI still open',
     since: (time) => `since ${time}`,
+    and: 'and',
     openBody: (items) => `Open: ${items}`,
     closedTitle: 'MINI',
     closedBody: 'Everything is closed.',
@@ -122,6 +123,7 @@ const TEXT = {
     openTitle: 'MINI açık kaldı',
     stillOpenTitle: 'MINI hâlâ açık',
     since: (time) => `${time}'${turkishFromSuffix(time)} beri`,
+    and: 've',
     openBody: (items) => `Açık: ${items}`,
     closedTitle: 'MINI',
     closedBody: 'Her şey kapandı.',
@@ -132,6 +134,8 @@ const TEXT = {
   },
 };
 const textFor = (cfg) => TEXT[cfg.language] ?? TEXT.en;
+// "a", "a and b", "a, b and c"
+const joinList = (items, word) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} ${word} ${items[items.length - 1]}`);
 // With more than one car, the title names the car: "MINI left open (Countryman)".
 const withName = (title, name) => (name ? `${title} (${name})` : title);
 
@@ -710,10 +714,18 @@ export class Watcher {
       // since an earlier day). The start of the park is the first lock after the drive (see parkBegin).
       const parkBegin = this.parkBegin();
       const shownSince = (name) => Math.max(this.openSince.get(name), parkBegin);
-      const items = [...current]
-        .sort((a, b) => shownSince(a) - shownSince(b) || this.openSince.get(a) - this.openSince.get(b))
-        .map((name) => `${label(name, this.cfg)} ${t.since(formatTime(shownSince(name), this.cfg, this.clock()))}`)
-        .join(', ');
+      // Parts with the same time share it: "front left door and rear right door since 16:54".
+      // A name shows once, with its earliest time (the trunk has two attributes).
+      const groups = new Map(); // time text -> part names
+      const shown = new Set();
+      for (const name of [...current].sort((a, b) => shownSince(a) - shownSince(b) || this.openSince.get(a) - this.openSince.get(b))) {
+        const text = label(name, this.cfg);
+        if (shown.has(text)) continue;
+        shown.add(text);
+        const when = t.since(formatTime(shownSince(name), this.cfg, this.clock()));
+        groups.set(when, [...(groups.get(when) ?? []), text]);
+      }
+      const items = [...groups].map(([when, texts]) => `${joinList(texts, t.and)} ${when}`).join(', ');
       const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
       const sent = await ntfy(this.cfg, title, t.openBody(items));
       if (!this.notifyResult(sent)) return;

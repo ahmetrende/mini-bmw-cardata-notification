@@ -63,7 +63,7 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 | Her şeyi kapattın | "Her şey kapandı" diyen tek bir mesaj |
 | Araç yolda | Bildirim yok |
 
-Tek bildirim, açık olan tüm parçaları sıralar. Süreleri `config.json` dosyasından değiştirebilirsin.
+Tek bildirim, açık olan tüm parçaları sıralar. Aynı saate sahip parçalar saati paylaşır. Süreleri `config.json` dosyasından değiştirebilirsin.
 
 ## Sınırlar
 
