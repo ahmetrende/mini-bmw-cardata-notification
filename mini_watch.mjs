@@ -89,6 +89,9 @@ const PARK_LOCK_WINDOW_S = 600;
 // Back at the car without a drive, then a new lock: wait until the car stays locked for 2 minutes.
 // A walk around the car with many locks and unlocks gives one notification, not one for each lock.
 const RELOCK_WAIT_S = 120;
+// A lock confirmation ("locked, everything is closed") only comes within 10 minutes of the lock.
+// A later check, for example after a restart, does not send an old confirmation.
+const CONFIRM_WINDOW_S = 600;
 
 // Text that the user sees on the phone. Log lines are always in English.
 const TEXT = {
@@ -112,6 +115,8 @@ const TEXT = {
     openBody: (items) => `Open: ${items}`,
     closedTitle: 'MINI',
     closedBody: 'Everything is closed.',
+    lockedTitle: 'MINI locked',
+    lockedBody: 'Everything is closed.',
     silenceTitle: 'MINI no data',
     silenceBody: (hours) => `No data from the car for ${hours} hours. Check the server and the CarData portal.`,
     testTitle: 'MINI test',
@@ -137,6 +142,8 @@ const TEXT = {
     openBody: (items) => `Açık: ${items}`,
     closedTitle: 'MINI',
     closedBody: 'Her şey kapandı.',
+    lockedTitle: 'MINI kilitlendi',
+    lockedBody: 'Her şey kapalı.',
     silenceTitle: 'MINI veri yok',
     silenceBody: (hours) => `Araçtan ${hours} saattir veri gelmiyor. Sunucuyu ve CarData portalını kontrol et.`,
     testTitle: 'MINI deneme',
@@ -208,6 +215,7 @@ export const DEFAULT_CONFIG = {
   alert_after_lock_min: 0, // Wait after the car is locked from outside, for a part that was open at that time. 0 = at once.
   remind_after_min: [30, 90], // Reminders: minutes after the first notification. [] = no reminder.
   park_after_idle_min: 30,
+  lock_confirm: false, // true = a notification "locked, everything is closed" when you lock the car with all parts closed.
   silence_alert_hours: 0, // 0 = off. Otherwise one notification when the car sends no data for this time.
   vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
   ntfy_server: 'https://ntfy.sh',
@@ -242,6 +250,9 @@ export function checkConfig(cfg) {
     throw new Error(
       `"remind_after_min" must be a list of up to ${MAX_REMINDERS} rising minutes, for example [30, 90]. [] means no reminder. Now it is ${JSON.stringify(remind)}.`,
     );
+  }
+  if (typeof cfg.lock_confirm !== 'boolean') {
+    throw new Error(`"lock_confirm" must be true or false. Now it is ${JSON.stringify(cfg.lock_confirm)}.`);
   }
   const hours = cfg.silence_alert_hours;
   if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0 || hours > MAX_SILENCE_HOURS) {
@@ -520,6 +531,7 @@ export class Watcher {
     this.lastDriverDoorAt = 0; // time the driver door last opened (to get in or to get out)
     this.lastDoorAt = 0; // time any door last opened
     this.lastUnlockAt = 0; // time the lock last changed to UNLOCKED
+    this.confirmedAt = 0; // time of the last "everything is closed" message or lock confirmation
     this.returnedAt = 0; // someone came back to the car after a notification (0 after a drive)
     this.doorOpen = new Map(); // door attribute -> last value. The car repeats an open door in each message.
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
@@ -570,6 +582,7 @@ export class Watcher {
       lastDriverDoorAt: this.lastDriverDoorAt,
       lastDoorAt: this.lastDoorAt,
       lastUnlockAt: this.lastUnlockAt,
+      confirmedAt: this.confirmedAt,
       returnedAt: this.returnedAt,
       lockStatus: this.lockStatus,
       lockChangedAt: this.lockChangedAt,
@@ -594,6 +607,8 @@ export class Watcher {
     this.lastDriverDoorAt = snap.lastDriverDoorAt ?? 0;
     this.lastDoorAt = snap.lastDoorAt ?? 0;
     this.lastUnlockAt = snap.lastUnlockAt ?? 0;
+    // A state from an older version: count the park now as confirmed, so the update sends no extra message.
+    this.confirmedAt = snap.confirmedAt ?? this.clock();
     this.returnedAt = snap.returnedAt ?? 0;
     this.lockStatus = snap.lockStatus ?? null;
     this.lockChangedAt = snap.lockChangedAt ?? 0;
@@ -711,6 +726,24 @@ export class Watcher {
     return false;
   }
 
+  // Optional (lock_confirm). The car is locked from outside and every part is closed: say it at once.
+  // It shows that the notification system works. Rules:
+  // - Only after a door opened or the car drove since the last confirmation. A key near the car (a valet)
+  //   can lock and unlock the car many times without a door. Those cycles give nothing.
+  // - A lock less than 2 minutes after the last confirmation gives nothing (a walk around the car).
+  // - Only within 10 minutes of the lock, so a restart does not send an old confirmation.
+  async confirmLock(t) {
+    if (!this.isSecured()) return;
+    const now = this.clock();
+    if (now - this.lockChangedAt < this.cfg.alert_after_lock_min * 60) return;
+    if (now - this.lockChangedAt > CONFIRM_WINDOW_S) return;
+    if (this.confirmedAt >= Math.max(this.lastDoorAt, this.kmChangedAt)) return;
+    if (this.lockChangedAt - this.confirmedAt < RELOCK_WAIT_S) return;
+    const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody, 'default', 'lock');
+    if (!this.notifyResult(sent)) return;
+    this.confirmedAt = now;
+  }
+
   async check() {
     if (this.isDriving()) return; // No notification while driving.
     if (this.clock() < this.retryAt) return; // Wait after a failed notification.
@@ -750,6 +783,9 @@ export class Watcher {
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
+        this.confirmedAt = this.clock(); // This message says it already. No lock confirmation right after it.
+      } else if (this.cfg.lock_confirm) {
+        await this.confirmLock(t);
       }
       return;
     }

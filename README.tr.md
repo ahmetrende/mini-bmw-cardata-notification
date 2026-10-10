@@ -61,6 +61,7 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 | Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra. Aracı kilitlersen hemen. |
 | Parça hâlâ açık | İlk bildirimden 30 ve 90 dakika sonra hatırlatma. Sonra başka yok. Araca dönünce durur. |
 | Her şeyi kapattın | "Her şey kapandı" diyen tek bir mesaj |
+| Aracı kilitledin ve her parça kapalı | İsteğe bağlı (`lock_confirm`): "kilitlendi, her şey kapalı". Sistemin çalıştığını gösterir. |
 | Araç yolda | Bildirim yok |
 
 Tek bildirim, açık olan tüm parçaları sıralar. Aynı saate sahip parçalar saati paylaşır. Süreleri `config.json` dosyasından değiştirebilirsin.

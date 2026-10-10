@@ -5,6 +5,7 @@
   "timezone": "",
   "alert_after_min": 10,
   "alert_after_lock_min": 0,
+  "lock_confirm": false,
   "remind_after_min": [30, 90],
   "park_after_idle_min": 30
 }

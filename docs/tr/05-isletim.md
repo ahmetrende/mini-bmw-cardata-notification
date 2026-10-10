@@ -62,6 +62,7 @@ sudo systemctl restart mini-watch
 | `alert_after_lock_min` | 0 | Aracı dışarıdan kilitledikten sonra, kilitlerken açık olan parça için bekleme. 0 = hemen. Camları kilit düğmesiyle kapatıyorsan 1 yap. |
 | `remind_after_min` | `[30, 90]` | Hatırlatmalar, ilk bildirimden kaç dakika sonra. `[]` = hatırlatma yok. En çok 10 değer, her biri öncekinden büyük. |
 | `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |
+| `lock_confirm` | `false` | `true` = aracı kilitleyince ve her parça kapalıyken "kilitlendi, her şey kapalı" mesajı. Sistemin çalıştığını gösterir. |
 | `silence_alert_hours` | 0 (kapalı) | Araçtan bu kadar saat veri gelmezse tek bir bildirim. Araç uyurken hiçbir şey yollamaz. Bu yüzden uzun süre park hâlinde de bu bildirim gelir. |
 | `vehicle_names` | `{}` | Hesapta birden fazla araç varsa araçların adları. Örnek: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | Kendi ntfy sunucunun adresi |

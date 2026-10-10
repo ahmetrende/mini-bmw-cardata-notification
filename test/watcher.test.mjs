@@ -1038,3 +1038,125 @@ test('a notification: the two front windows and the driver door, one time', asyn
   const lines = await logsDuring(() => watcher.check());
   assert.match(lines[0], /Açık: sol ve sağ ön cam ve sol ön kapı 00:00'dan beri$/);
 });
+
+// ---- Lock confirmation (lock_confirm): "locked, everything is closed" ----
+
+const CONFIRM = { lock_confirm: true };
+// A drive and a park with the sunroof closed before the lock at minute 24.
+const parkedClosed = (extra = []) => lockedTrip([[23.5, { [TILT]: 'CLOSED' }], ...extra]);
+
+test('lock confirmation: you lock the car and everything is closed, the message comes at once', async () => {
+  const sent = await simulate(parkedClosed(), 0, 60, CONFIRM);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 24);
+  assert.match(sent[0][1], /MINI locked: Everything is closed\.$/);
+});
+
+test('lock confirmation: Turkish text', async () => {
+  const sent = await simulate(parkedClosed(), 0, 60, { ...CONFIRM, language: 'tr' });
+  assert.match(sent[0][1], /MINI kilitlendi: Her şey kapalı\.$/);
+});
+
+test('lock confirmation: off by default', async () => {
+  assert.deepEqual(await simulate(parkedClosed(), 0, 60), []);
+});
+
+test('lock confirmation: a part that is open at the lock gives "left open", not a confirmation', async () => {
+  const sent = await simulate(lockedTrip(), 0, 40, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24]);
+  assert.match(sent[0][1], /MINI left open/);
+});
+
+test('lock confirmation: unlock and lock without a door (a valet key) give nothing more', async () => {
+  const cycles = [];
+  for (const m of [30, 40, 70, 100]) cycles.push([m, { [LOCK]: 'UNLOCKED' }], [m + 0.25, { [LOCK]: 'SECURED' }]);
+  const sent = await simulate(parkedClosed(cycles), 0, 200, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24]);
+});
+
+test('lock confirmation: a walk around the car (a lock less than 2 minutes after the last one) gives one message', async () => {
+  const events = parkedClosed([
+    [24.5, { [LOCK]: 'UNLOCKED' }],
+    [24.75, DOOR_OPEN],
+    [25, DOOR_CLOSED],
+    [25.25, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 60, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24]);
+});
+
+test('lock confirmation: a later stop with a door and a lock gives a new message', async () => {
+  const events = parkedClosed([
+    [40, { [LOCK]: 'UNLOCKED' }],
+    [40.5, DOOR_OPEN],
+    [41, DOOR_CLOSED],
+    [41.5, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 60, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24, 41.5]);
+});
+
+test('lock confirmation: no second message right after "everything is closed"', async () => {
+  const events = lockedTrip([
+    [40, { [TILT]: 'CLOSED' }], // "left open" at 24, "everything is closed" at 40
+    [40.2, { [LOCK]: 'UNLOCKED' }],
+    [40.4, DOOR_OPEN],
+    [40.6, DOOR_CLOSED],
+    [40.8, { [LOCK]: 'SECURED' }], // locked less than 2 minutes after the closed message
+  ]);
+  const sent = await simulate(events, 0, 80, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24, 40]);
+  assert.match(sent[1][1], /Everything is closed\./);
+});
+
+test('lock confirmation: it comes after "everything is closed" when you lock the car later', async () => {
+  const events = lockedTrip([
+    [40, { [TILT]: 'CLOSED' }],
+    [44, { [LOCK]: 'UNLOCKED' }],
+    [44.5, DOOR_OPEN],
+    [45, DOOR_CLOSED],
+    [45.5, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 80, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24, 40, 45.5]);
+  assert.match(sent[2][1], /MINI locked/);
+});
+
+test('lock confirmation: an old lock gives no message (a check 10 minutes later, for example after a restart)', async () => {
+  const { watcher, at } = virtualWatcher(CONFIRM);
+  watcher.onData(msg({ [KM]: 100 }), at(0));
+  watcher.onData(msg({ [DRIVER_DOOR]: true }), at(1));
+  watcher.onData(msg({ [DRIVER_DOOR]: false }), at(1.2));
+  watcher.onData(msg({ [LOCK]: 'SECURED' }), at(2));
+  at(20);
+  assert.deepEqual(await logsDuring(() => watcher.check()), []);
+});
+
+test('lock confirmation: a failed message is sent again, the state waits for the success', async () => {
+  let clock = 1000;
+  const watcher = new Watcher({ ...ntfyConfig, lock_confirm: true }, { clock: () => clock, random: () => 0.5 });
+  watcher.onData(msg({ [KM]: 100 }), clock - 300);
+  watcher.onData(msg({ [DRIVER_DOOR]: true }), clock - 200);
+  watcher.onData(msg({ [DRIVER_DOOR]: false }), clock - 190);
+  watcher.onData(msg({ [LOCK]: 'SECURED' }), clock - 100);
+  const calls = await withFakeNtfy([500, 200], async () => {
+    await watcher.check();
+    assert.equal(watcher.confirmedAt, 0);
+    clock += 31;
+    await watcher.check();
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].title, 'MINI locked');
+  assert.equal(watcher.confirmedAt, clock);
+});
+
+test('lock confirmation: the setting must be true or false, the state keeps the time', () => {
+  checkConfig({ ...DEFAULT_CONFIG, lock_confirm: true });
+  assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, lock_confirm: 'yes' }), /lock_confirm/);
+  const { watcher } = virtualWatcher(CONFIRM);
+  watcher.confirmedAt = 777;
+  assert.equal(watcher.snapshot().confirmedAt, 777);
+  const older = virtualWatcher(CONFIRM);
+  older.watcher.restoreWatch({}); // a state of an older version has no confirmedAt
+  assert.equal(older.watcher.confirmedAt, 0, 'the virtual clock is at 0');
+});
