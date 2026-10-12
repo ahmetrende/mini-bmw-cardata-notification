@@ -92,6 +92,9 @@ const RELOCK_WAIT_S = 120;
 // A lock confirmation ("locked, everything is closed") only comes within 10 minutes of the lock.
 // A later check, for example after a restart, does not send an old confirmation.
 const CONFIRM_WINDOW_S = 600;
+// "Everything is closed" waits until every part stays closed for this time. While you unload the car, the doors
+// open one after the other. A check between two doors must not send the message too early.
+const CLOSED_SETTLE_S = 15;
 // The length of the last drive: from the moment the car locks itself (LOCKED) to the unlock at the end.
 // The LOCKED state must start at most 20 minutes before the first odometer value of the drive.
 // A stop shorter than 10 minutes belongs to the same drive.
@@ -581,6 +584,7 @@ export class Watcher {
     this.lastDoorAt = 0; // time any door last opened
     this.lastUnlockAt = 0; // time the lock last changed to UNLOCKED
     this.confirmedAt = 0; // time of the last "everything is closed" message or lock confirmation
+    this.allClosedSince = 0; // time the last open part closed (0 = unknown, counts as long ago)
     this.returnedAt = 0; // someone came back to the car after a notification (0 after a drive)
     this.doorOpen = new Map(); // door attribute -> last value. The car repeats an open door in each message.
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
@@ -833,7 +837,10 @@ export class Watcher {
       if (OPEN_VALUES.has(value)) {
         if (!this.openSince.has(name)) this.openSince.set(name, at);
       } else if (CLOSED_VALUES.has(value)) {
-        if (this.openSince.delete(name)) this.sawClose = true;
+        if (this.openSince.delete(name)) {
+          this.sawClose = true;
+          if (this.openSince.size === 0) this.allClosedSince = at;
+        }
       } else if (!this.unknownSeen.has(`${name}=${value}`)) {
         this.unknownSeen.add(`${name}=${value}`);
         log(`Unknown value "${value}" for ${name}. The last known state stays.`);
@@ -920,6 +927,7 @@ export class Watcher {
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {
+        if (this.clock() - this.allClosedSince < CLOSED_SETTLE_S) return; // A door may open next. The next check asks again.
         const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'));
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
@@ -984,6 +992,13 @@ export class Fleet {
     this.lastSave = 0;
     this.dirty = false;
     this.saved = null; // the state file as it was at the start
+  }
+
+  // While a "closed" message waits for its settle time, check more often. The message then comes
+  // about 15 to 20 seconds after the last part closed (a check every 15 seconds would give 15 to 30).
+  nextCheckDelayMs() {
+    const pending = [...this.watchers.values()].some((watcher) => watcher.alerted && watcher.sawClose && watcher.openSince.size === 0);
+    return pending ? 5_000 : 15_000;
   }
 
   watcher(vin) {
@@ -1242,7 +1257,7 @@ async function run(cfg) {
     });
 
     while (!closed && tokens.id_expires_at - now() > TOKEN_MARGIN_S) {
-      await Promise.race([sleep(15_000), closedSignal]); // On a close, do not wait the full 15 seconds.
+      await Promise.race([sleep(fleet.nextCheckDelayMs()), closedSignal]); // On a close, do not wait the full time.
       heartbeat();
       if (!closed) await fleet.check();
     }

@@ -132,7 +132,11 @@ test('"everything is closed" goes out once after an alert', async () => {
   at(10);
   await logsDuring(() => watcher.check());
   watcher.onData(msg({ [WIN]: 'CLOSED' }), at(11));
-  const lines = await logsDuring(() => watcher.check());
+  assert.equal((await logsDuring(() => watcher.check())).length, 0, 'it waits 15 seconds');
+  const lines = await logsDuring(() => {
+    at(11.25);
+    return watcher.check();
+  });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /MINI: Everything is closed\./);
   assert.equal((await logsDuring(() => watcher.check())).length, 0, 'only once');
@@ -144,6 +148,7 @@ test('missing data after a restart does not count as closed', async () => {
   assert.equal((await logsDuring(() => watcher.check())).length, 0, 'no data yet, no "closed" message');
   watcher.onData(msg({ [WIN]: 'OPEN' }), at(1));
   watcher.onData(msg({ [WIN]: 'CLOSED' }), at(2)); // now the program sees a real close
+  at(2.25);
   const lines = await logsDuring(() => watcher.check());
   assert.equal(lines.length, 1);
   assert.match(lines[0], /Everything is closed\./);
@@ -908,14 +913,14 @@ const driveAfterAlert = (extra) => [
 
 test('closed after a drive: the sunroof closes right after the drive, one "closed" message at the park', async () => {
   const sent = await simulate(driveAfterAlert([[41, { [TILT]: 'CLOSED' }]]), 0, 120);
-  // The driver door is a part too. The message comes when it closes again (42.2).
-  assert.deepEqual(sent.map(([m]) => m), [11, 42.25]);
+  // The driver door is a part too. The message comes 15 seconds after it closes again (42.2).
+  assert.deepEqual(sent.map(([m]) => m), [11, 42.5]);
   assert.match(sent[1][1], /MINI: Everything is closed\./);
 });
 
 test('closed after a drive: the sunroof closes during the drive, the message waits for the park', async () => {
   const sent = await simulate(driveAfterAlert([[30, { [TILT]: 'CLOSED' }]]), 0, 120);
-  assert.deepEqual(sent.map(([m]) => m), [11, 42.25], 'nothing while driving, also not after the later odometer values');
+  assert.deepEqual(sent.map(([m]) => m), [11, 42.5], 'nothing while driving, also not after the later odometer values');
   assert.match(sent[1][1], /Everything is closed\./);
 });
 
@@ -939,7 +944,7 @@ test('closed after a drive: an old alert does not give a wrong "closed" later', 
     [101, { [WIN]: 'CLOSED' }],
   ];
   const sent = await simulate(events, 0, 300);
-  assert.deepEqual(sent.map(([m]) => m), [11, 12]);
+  assert.deepEqual(sent.map(([m]) => m), [11, 12.25]);
 });
 
 test('closed after a drive: an alert is forgotten at an odometer increase when nothing is open and no close waits', () => {
@@ -1110,7 +1115,7 @@ test('lock confirmation: no second message right after "everything is closed"', 
     [40.8, { [LOCK]: 'SECURED' }], // locked less than 2 minutes after the closed message
   ]);
   const sent = await simulate(events, 0, 80, CONFIRM);
-  assert.deepEqual(sent.map(([m]) => m), [24, 40]);
+  assert.deepEqual(sent.map(([m]) => m), [24, 40.25]);
   assert.match(sent[1][1], /Everything is closed\./);
 });
 
@@ -1123,7 +1128,7 @@ test('lock confirmation: it comes after "everything is closed" when you lock the
     [45.5, { [LOCK]: 'SECURED' }],
   ]);
   const sent = await simulate(events, 0, 80, CONFIRM);
-  assert.deepEqual(sent.map(([m]) => m), [24, 40, 45.5]);
+  assert.deepEqual(sent.map(([m]) => m), [24, 40.25, 45.5]);
   assert.match(sent[2][1], /MINI locked/);
 });
 
@@ -1178,7 +1183,8 @@ async function tagsOfADay(extra) {
     clock += 1800;
     await watcher.check(); // reminder
     watcher.onData(msg({ [WIN]: 'CLOSED' }), clock);
-    await watcher.check(); // everything is closed
+    clock += 15;
+    await watcher.check(); // everything is closed (after 15 seconds)
     clock += 600;
     watcher.onData(msg({ [DRIVER_DOOR]: true }), clock);
     watcher.onData(msg({ [DRIVER_DOOR]: false }), clock + 5);
@@ -1399,5 +1405,49 @@ test('lock confirmation: a suppressed lock counts as handled, a later lock witho
     [100.25, { [LOCK]: 'SECURED' }],
   ]);
   const sent = await simulate(events, 0, 160, CONFIRM);
-  assert.deepEqual(sent.map(([m]) => m), [24, 40]);
+  assert.deepEqual(sent.map(([m]) => m), [24, 40.25]);
+});
+
+// ---- "Everything is closed" waits 15 seconds ----
+
+test('closed: a check between two doors does not send the message, the message comes 15 seconds after the last door', async () => {
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }],
+    [1, DOOR_OPEN],
+    [1.2, DOOR_CLOSED],
+    [12, { [LOCK]: 'UNLOCKED' }], // back at the car after the "left open" alert at minute 11
+    [12.5, DOOR_OPEN],
+    [12.6, DOOR_CLOSED],
+    [13, { [TILT]: 'CLOSED' }], // everything is closed from here, but a door opens 6 seconds later
+    [13.1, { [REAR_DOOR]: true }],
+    [14, { [REAR_DOOR]: false }],
+  ];
+  const sent = await simulate(events, 0, 40);
+  assert.deepEqual(sent.map(([m]) => m), [11, 14.25], 'not at 13.25 between the two doors, but 15 seconds after the last door at 14');
+  assert.match(sent[1][1], /Everything is closed\./);
+});
+
+test('closed: the message waits for the 15 seconds, also with a direct check', async () => {
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [WIN]: 'OPEN' }), at(0));
+  at(10);
+  await logsDuring(() => watcher.check());
+  watcher.onData(msg({ [WIN]: 'CLOSED' }), at(11));
+  for (const seconds of [0, 5, 14]) {
+    at(11 + seconds / 60);
+    assert.equal((await logsDuring(() => watcher.check())).length, 0, `${seconds} s`);
+  }
+  at(11 + 15 / 60);
+  assert.equal((await logsDuring(() => watcher.check())).length, 1, '15 s');
+});
+
+test('closed: the main loop checks every 5 seconds while a closed message waits, else every 15', async () => {
+  const fleet = new Fleet(baseConfig, { clock: () => 0 });
+  assert.equal(fleet.nextCheckDelayMs(), 15_000);
+  const watcher = fleet.watcher(VIN_A);
+  watcher.alerted = true;
+  watcher.sawClose = true;
+  assert.equal(fleet.nextCheckDelayMs(), 5_000);
+  watcher.openSince.set(WIN, 0);
+  assert.equal(fleet.nextCheckDelayMs(), 15_000, 'a part is open: nothing waits');
 });
