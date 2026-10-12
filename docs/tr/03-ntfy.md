@@ -53,6 +53,8 @@ Telefonuna bildirim düşmeli. Düşmezse telefon ayarlarında ntfy için bildir
 
 Menü adları uygulama sürümüne göre değişebilir. Android'de bildirim geç geliyorsa önce bu ayarlara bak.
 
+**Simge.** iPhone'da bildirim, ntfy uygulamasının simgesini gösterir. Bu simge değişmez. ntfy'nin kendi simge seçeneği yalnızca Android'de çalışır. Başlığın başındaki emojiyi `ntfy_tags` ayarıyla değiştirebilirsin ([4. adıma](05-isletim.md) bak).
+
 ## Güvenlik
 
 - Bildirimler uçtan uca şifreli değil. ntfy.sh sunucusu metni okuyabilir.

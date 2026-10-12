@@ -17,6 +17,7 @@ import {
   formatTime,
   label,
   describeParts,
+  tagFor,
   parseStreamMessage,
   readBody,
   replayRecent,
@@ -1159,4 +1160,55 @@ test('lock confirmation: the setting must be true or false, the state keeps the 
   const older = virtualWatcher(CONFIRM);
   older.watcher.restoreWatch({}); // a state of an older version has no confirmedAt
   assert.equal(older.watcher.confirmedAt, 0, 'the virtual clock is at 0');
+});
+
+// ---- The emoji of each notification (ntfy_tags) ----
+
+// Runs a day: an alert, a reminder after 30 minutes, "everything is closed", then a lock with every part closed.
+async function tagsOfADay(extra) {
+  let clock = 1000;
+  const watcher = new Watcher({ ...ntfyConfig, lock_confirm: true, ...extra }, { clock: () => clock, random: () => 0.5 });
+  const calls = await withFakeNtfy([200], async () => {
+    watcher.onData(msg({ [KM]: 100, [WIN]: 'OPEN' }), clock - 5000);
+    await watcher.check(); // alert
+    clock += 1800;
+    await watcher.check(); // reminder
+    watcher.onData(msg({ [WIN]: 'CLOSED' }), clock);
+    await watcher.check(); // everything is closed
+    clock += 600;
+    watcher.onData(msg({ [DRIVER_DOOR]: true }), clock);
+    watcher.onData(msg({ [DRIVER_DOOR]: false }), clock + 5);
+    watcher.onData(msg({ [LOCK]: 'SECURED' }), clock + 10);
+    clock += 20;
+    await watcher.check(); // lock confirmation
+  });
+  return calls.map((call) => call.tags);
+}
+
+test('ntfy_tags: the defaults are the emoji of before', async () => {
+  assert.deepEqual(await tagsOfADay({}), [['warning'], ['warning'], ['white_check_mark'], ['lock']]);
+  assert.deepEqual(Object.keys(DEFAULT_CONFIG.ntfy_tags).sort(), ['closed', 'locked', 'open', 'silence', 'still_open', 'test']);
+});
+
+test('ntfy_tags: a kind that is set changes, the other kinds keep their default', async () => {
+  const tags = await tagsOfADay({ ntfy_tags: { open: 'rotating_light', locked: 'key,lock' } });
+  assert.deepEqual(tags, [['rotating_light'], ['warning'], ['white_check_mark'], ['key', 'lock']]);
+  assert.equal(tagFor({ ntfy_tags: { test: 'blue_car' } }, 'test'), 'blue_car');
+  assert.equal(tagFor({ ntfy_tags: { test: 'blue_car' } }, 'silence'), 'grey_question');
+  assert.equal(tagFor({}, 'closed'), 'white_check_mark');
+});
+
+test('ntfy_tags: a wrong setting stops the program with a clear message', () => {
+  checkConfig({ ...DEFAULT_CONFIG, ntfy_tags: { open: 'rotating_light', test: 'blue_car' } });
+  checkConfig({ ...DEFAULT_CONFIG, ntfy_tags: {} });
+  for (const [bad, pattern] of [
+    [{ opne: 'warning' }, /unknown kind "opne"/],
+    [{ open: '' }, /ntfy_tags\.open/],
+    [{ open: 5 }, /ntfy_tags\.open/],
+    [{ open: '🚨' }, /ntfy_tags\.open/],
+    [{ open: 'a b' }, /ntfy_tags\.open/],
+    [['warning'], /must look like/],
+  ]) {
+    assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, ntfy_tags: bad }), pattern, JSON.stringify(bad));
+  }
 });

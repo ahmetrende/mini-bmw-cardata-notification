@@ -220,6 +220,9 @@ export const DEFAULT_CONFIG = {
   vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
   ntfy_server: 'https://ntfy.sh',
   ntfy_topic: '',
+  // The emoji at the start of the title. An ntfy tag name for each kind of notification. A comma gives more
+  // than one tag. The list of names: https://docs.ntfy.sh/emojis/. A missing key keeps its default.
+  ntfy_tags: { open: 'warning', still_open: 'warning', closed: 'white_check_mark', locked: 'lock', silence: 'grey_question', test: 'car' },
 };
 
 // Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
@@ -250,6 +253,17 @@ export function checkConfig(cfg) {
     throw new Error(
       `"remind_after_min" must be a list of up to ${MAX_REMINDERS} rising minutes, for example [30, 90]. [] means no reminder. Now it is ${JSON.stringify(remind)}.`,
     );
+  }
+  const tags = cfg.ntfy_tags;
+  const tagKinds = Object.keys(DEFAULT_CONFIG.ntfy_tags);
+  if (!tags || typeof tags !== 'object' || Array.isArray(tags)) {
+    throw new Error(`"ntfy_tags" must look like {"open": "rotating_light"}. The kinds: ${tagKinds.join(', ')}.`);
+  }
+  for (const [kind, value] of Object.entries(tags)) {
+    if (!tagKinds.includes(kind)) throw new Error(`"ntfy_tags" has an unknown kind "${kind}". The kinds: ${tagKinds.join(', ')}.`);
+    if (typeof value !== 'string' || !/^[a-z0-9_+-]+(,[a-z0-9_+-]+)*$/i.test(value)) {
+      throw new Error(`"ntfy_tags.${kind}" must be an ntfy tag name like "rotating_light". A comma gives more than one. Now it is ${JSON.stringify(value)}.`);
+    }
   }
   if (typeof cfg.lock_confirm !== 'boolean') {
     throw new Error(`"lock_confirm" must be true or false. Now it is ${JSON.stringify(cfg.lock_confirm)}.`);
@@ -402,6 +416,9 @@ const NTFY_PRIORITY = { default: 3, high: 4 };
 
 // A title in an HTTP header fails for letters outside Latin-1. A JSON body carries UTF-8.
 // Returns true only when ntfy accepted the message (HTTP 2xx). An empty topic prints the text and returns true.
+// The tag (emoji) of a kind of notification: open, still_open, closed, locked, silence or test.
+export const tagFor = (cfg, kind) => cfg.ntfy_tags?.[kind] ?? DEFAULT_CONFIG.ntfy_tags[kind];
+
 export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning') {
   if (!cfg.ntfy_topic) {
     log(`[ntfy off] ${title}: ${text}`);
@@ -739,7 +756,7 @@ export class Watcher {
     if (now - this.lockChangedAt > CONFIRM_WINDOW_S) return;
     if (this.confirmedAt >= Math.max(this.lastDoorAt, this.kmChangedAt)) return;
     if (this.lockChangedAt - this.confirmedAt < RELOCK_WAIT_S) return;
-    const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody, 'default', 'lock');
+    const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody, 'default', tagFor(this.cfg, 'locked'));
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;
   }
@@ -779,7 +796,7 @@ export class Watcher {
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {
-        const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody, 'default', 'white_check_mark');
+        const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody, 'default', tagFor(this.cfg, 'closed'));
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
@@ -816,7 +833,7 @@ export class Watcher {
       }
       const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg)} ${when}`).join(', ');
       const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
-      const sent = await ntfy(this.cfg, title, t.openBody(items));
+      const sent = await ntfy(this.cfg, title, t.openBody(items), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
@@ -879,7 +896,7 @@ export class Fleet {
     if (!hours || this.silenceAlerted || this.clock() < this.silenceRetryAt) return;
     if (this.clock() - (this.lastMessageAt || this.startedAt) < hours * 3600) return;
     const t = textFor(this.cfg);
-    if (await ntfy(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', 'grey_question')) {
+    if (await ntfy(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', tagFor(this.cfg, 'silence'))) {
       this.silenceAlerted = true;
       this.dirty = true;
     } else {
@@ -1264,7 +1281,7 @@ async function main() {
     else if (command === 'run') await run(cfg);
     else if (command === 'ntfy-test') {
       const t = textFor(cfg);
-      process.exit((await ntfy(cfg, t.testTitle, t.testBody, 'default', 'car')) ? 0 : 1);
+      process.exit((await ntfy(cfg, t.testTitle, t.testBody, 'default', tagFor(cfg, 'test'))) ? 0 : 1);
     } else {
       console.error('Usage: node mini_watch.mjs login | run | ntfy-test | doctor [--offline]');
       process.exit(2);

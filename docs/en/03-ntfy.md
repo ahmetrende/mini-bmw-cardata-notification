@@ -53,6 +53,8 @@ A notification must arrive on your phone. If it does not arrive, check that noti
 
 Menu names can change between app versions. If a notification is late on Android, check these settings first.
 
+**Icon.** On an iPhone, the notification shows the icon of the ntfy app. This icon cannot change. The ntfy option for an own icon works only on Android. You can change the emoji at the start of the title with the setting `ntfy_tags` (see [Step 4](05-operations.md)).
+
 ## Security
 
 - Notifications are not end-to-end encrypted. The ntfy.sh server can read the text.
