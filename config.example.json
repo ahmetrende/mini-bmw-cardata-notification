@@ -6,6 +6,8 @@
   "alert_after_min": 10,
   "alert_after_lock_min": 0,
   "lock_confirm": false,
+  "notify_trip": false,
+  "notify_battery": false,
   "remind_after_min": [30, 90],
   "park_after_idle_min": 30
 }

@@ -73,6 +73,8 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 | `vehicle.drivetrain.engine.isIgnitionOn` | Kontak durumu. Test edilen araç yollamadı. |
 | `vehicle.isMoving` | Hareket durumu. Test edilen araç yollamadı. |
 | `vehicle.cabin.sunroof.overallStatus` | Cam tavanın genel durumu. Program yalnızca kaydeder. |
+| `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Batarya seviyesi (yüzde). `notify_battery` ayarı için. Elektrikli ve hibrit araçlarda. Denenmedi. Alternatif: `vehicle.drivetrain.batteryManagement.header`. |
+| `vehicle.drivetrain.electricEngine.kombiRemainingElectricRange` | Kalan elektrik menzili. `notify_battery` ayarı için. Denenmedi. Alternatifler: `vehicle.drivetrain.electricEngine.remainingElectricRange` ve `vehicle.drivetrain.lastRemainingRange`. |
 
 Portal, araç tipine uygun öznitelikleri gösterir. Akış ise yalnızca aracının desteklediklerini yollar. Eksik bir öznitelik hata vermez, ama o parça için bildirim çalışmaz.
 

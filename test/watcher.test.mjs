@@ -17,6 +17,7 @@ import {
   formatTime,
   label,
   describeParts,
+  textsFor,
   tagFor,
   parseStreamMessage,
   readBody,
@@ -31,7 +32,9 @@ const WIN = 'vehicle.cabin.window.row1.passenger.status';
 const DRIVER_DOOR = 'vehicle.cabin.door.row1.driver.isOpen';
 const IGNITION = 'vehicle.drivetrain.engine.isIgnitionOn';
 
-const msg = (values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }]));
+// A value, or a whole item like { value: 187, unit: 'km' }.
+const msg = (values) =>
+  Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value !== null && typeof value === 'object' && 'value' in value ? value : { value }]));
 // Fake VINs. They do not match a real VIN pattern.
 const VIN_A = 'TESTVIN0000000001';
 const VIN_B = 'TESTVIN0000000002';
@@ -1210,5 +1213,110 @@ test('ntfy_tags: a wrong setting stops the program with a clear message', () => 
     [['warning'], /must look like/],
   ]) {
     assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, ntfy_tags: bad }), pattern, JSON.stringify(bad));
+  }
+});
+
+// ---- Drive length, battery level and range at the end of a notification ----
+
+const SOC = 'vehicle.powertrain.electric.battery.stateOfCharge.displayed';
+const SOC_HEADER = 'vehicle.drivetrain.batteryManagement.header';
+const RANGE_KOMBI = 'vehicle.drivetrain.electricEngine.kombiRemainingElectricRange';
+const RANGE_LAST = 'vehicle.drivetrain.lastRemainingRange';
+const DETAILS = { notify_trip: true, notify_battery: true };
+// lockedTrip: the car locks itself at minute 2 (LOCKED), the odometer rises from minute 6, it unlocks at 22.
+const tripWith = (extra = []) => lockedTrip([[7, { [SOC]: 63.6, [RANGE_KOMBI]: { value: 187, unit: 'km' } }], ...extra]);
+
+test('details: drive length, battery level and range after the text of an alert', async () => {
+  const sent = await simulate(tripWith(), 0, 40, DETAILS);
+  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24 \(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
+test('details: Turkish text', async () => {
+  const sent = await simulate(tripWith(), 0, 40, { ...DETAILS, language: 'tr' });
+  assert.match(sent[0][1], /\(sürüş 20 dk, batarya %64, menzil 187 km\)$/);
+});
+
+test('details: also after "everything is closed" and after a lock confirmation', async () => {
+  const closed = await simulate(tripWith([[40, { [TILT]: 'CLOSED' }]]), 0, 80, DETAILS);
+  assert.match(closed[1][1], /MINI: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+  const locked = await simulate(tripWith([[23.5, { [TILT]: 'CLOSED' }]]), 0, 80, { ...DETAILS, lock_confirm: true });
+  assert.match(locked[0][1], /MINI locked: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
+test('details: off by default, and each part has its own setting', async () => {
+  assert.doesNotMatch((await simulate(tripWith(), 0, 40))[0][1], /\(drive/);
+  assert.match((await simulate(tripWith(), 0, 40, { notify_trip: true }))[0][1], /\(drive 20 min\)$/);
+  assert.match((await simulate(tripWith(), 0, 40, { notify_battery: true }))[0][1], /\(battery 64%, range 187 km\)$/);
+});
+
+test('details: a range in miles is shown in kilometres, the first battery attribute wins', async () => {
+  const miles = await simulate(lockedTrip([[7, { [RANGE_KOMBI]: { value: 100, unit: 'mi' } }]]), 0, 40, { notify_battery: true });
+  assert.match(miles[0][1], /\(range 161 km\)$/);
+  const both = await simulate(lockedTrip([[7, { [SOC_HEADER]: 50, [SOC]: 64.4, [RANGE_LAST]: 300, [RANGE_KOMBI]: 200 }]]), 0, 40, { notify_battery: true });
+  assert.match(both[0][1], /\(battery 64%, range 200 km\)$/);
+  const second = await simulate(lockedTrip([[7, { [SOC_HEADER]: 50, [RANGE_LAST]: 300 }]]), 0, 40, { notify_battery: true });
+  assert.match(second[0][1], /\(battery 50%, range 300 km\)$/);
+});
+
+test('details: a value outside the range or not a number is ignored', async () => {
+  const sent = await simulate(lockedTrip([[7, { [SOC]: 140, [RANGE_KOMBI]: 'n/a' }]]), 0, 40, { notify_battery: true });
+  assert.doesNotMatch(sent[0][1], /\((drive|battery|range)/);
+});
+
+test('details: a stop shorter than 10 minutes belongs to the same drive, a longer stop does not', async () => {
+  const leg = (from) => [[from, { [LOCK]: 'LOCKED' }], ...drive(from + 3, from + 10, 200 + from)];
+  const trip = (stop) => [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }],
+    ...leg(2),
+    [14, { [LOCK]: 'UNLOCKED' }], // a stop
+    ...leg(14 + stop),
+    [14 + stop + 14, { [LOCK]: 'UNLOCKED' }], // the end
+    [14 + stop + 15, DOOR_OPEN],
+    [14 + stop + 15.2, DOOR_CLOSED],
+    [14 + stop + 16, { [LOCK]: 'SECURED' }],
+  ];
+  const short = await simulate(trip(5), 0, 120, { notify_trip: true });
+  assert.match(short[0][1], /\(drive 31 min\)$/, 'from minute 2 to minute 33, the stop of 5 minutes included');
+  const long = await simulate(trip(15), 0, 120, { notify_trip: true });
+  assert.match(long[0][1], /\(drive 14 min\)$/, 'only the last leg');
+});
+
+test('details: the lock after parking (LOCKED, then SECURED) does not change the drive length', async () => {
+  const events = tripWith([
+    [23.2, { [LOCK]: 'LOCKED' }], // the car locks itself when you walk away
+    [23.4, { [TILT]: 'CLOSED' }],
+  ]);
+  const sent = await simulate(events, 0, 80, { ...DETAILS, lock_confirm: true });
+  assert.match(sent[0][1], /\(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
+test('details: a car without lock data shows no drive length, but the battery', async () => {
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN', [SOC]: 80 }],
+    [1, DOOR_OPEN],
+    [1.2, DOOR_CLOSED],
+    ...drive(5, 20, 101),
+    [22, DOOR_OPEN],
+    [22.2, DOOR_CLOSED],
+  ];
+  const sent = await simulate(events, 0, 60, DETAILS);
+  assert.match(sent[0][1], /\(battery 80%\)$/);
+});
+
+test('details: the state keeps the drive and the readings for a restart', () => {
+  const { watcher, at } = virtualWatcher(DETAILS);
+  watcher.onData(msg({ [KM]: 100, [LOCK]: 'LOCKED' }), at(2));
+  watcher.onData(msg({ [KM]: 101, [SOC]: 71, [RANGE_KOMBI]: { value: 150, unit: 'km' } }), at(6));
+  watcher.onData(msg({ [LOCK]: 'UNLOCKED' }), at(22));
+  const snap = JSON.parse(JSON.stringify(watcher.snapshot()));
+  const restored = virtualWatcher(DETAILS).watcher;
+  restored.restoreWatch(snap);
+  assert.equal(restored.detailsText(textsFor('en')), ' (drive 20 min, battery 71%, range 150 km)');
+});
+
+test('details: the settings must be true or false', () => {
+  checkConfig({ ...DEFAULT_CONFIG, notify_trip: true, notify_battery: true });
+  for (const key of ['notify_trip', 'notify_battery']) {
+    assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, [key]: 'yes' }), new RegExp(key));
   }
 });

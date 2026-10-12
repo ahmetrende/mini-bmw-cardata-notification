@@ -73,6 +73,8 @@ Do **not** press **Authenticate device** now. You use that button in Step 3, aft
 | `vehicle.drivetrain.engine.isIgnitionOn` | Ignition state. The tested car did not send it. |
 | `vehicle.isMoving` | Motion state. The tested car did not send it. |
 | `vehicle.cabin.sunroof.overallStatus` | General sunroof state. The program only records it. |
+| `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Battery level in percent. For the setting `notify_battery`. Electric and hybrid cars. Not tested. Alternative: `vehicle.drivetrain.batteryManagement.header`. |
+| `vehicle.drivetrain.electricEngine.kombiRemainingElectricRange` | Remaining electric range. For the setting `notify_battery`. Not tested. Alternatives: `vehicle.drivetrain.electricEngine.remainingElectricRange` and `vehicle.drivetrain.lastRemainingRange`. |
 
 The portal shows the attributes that exist for your car type. The stream sends only the attributes that your car supports. A missing attribute does not cause an error. The notification for that part does not work.
 

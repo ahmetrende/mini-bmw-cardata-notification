@@ -92,6 +92,20 @@ const RELOCK_WAIT_S = 120;
 // A lock confirmation ("locked, everything is closed") only comes within 10 minutes of the lock.
 // A later check, for example after a restart, does not send an old confirmation.
 const CONFIRM_WINDOW_S = 600;
+// The length of the last drive: from the moment the car locks itself (LOCKED) to the unlock at the end.
+// The LOCKED state must start at most 20 minutes before the first odometer value of the drive.
+// A stop shorter than 10 minutes belongs to the same drive.
+const TRIP_START_WINDOW_S = 1200;
+const TRIP_GAP_S = 600;
+const MAX_TRIP_S = 12 * 3600;
+// Battery level (percent) and range. The first attribute that the car sends is used.
+const PERCENT_ATTRS = ['vehicle.powertrain.electric.battery.stateOfCharge.displayed', 'vehicle.drivetrain.batteryManagement.header'];
+const RANGE_ATTRS = [
+  'vehicle.drivetrain.electricEngine.kombiRemainingElectricRange',
+  'vehicle.drivetrain.electricEngine.remainingElectricRange',
+  'vehicle.drivetrain.lastRemainingRange',
+];
+const MILE_IN_KM = 1.609344;
 
 // Text that the user sees on the phone. Log lines are always in English.
 const TEXT = {
@@ -117,6 +131,10 @@ const TEXT = {
     closedBody: 'Everything is closed.',
     lockedTitle: 'MINI locked',
     lockedBody: 'Everything is closed.',
+    trip: (duration) => `drive ${duration}`,
+    duration: (hours, minutes) => (hours ? `${hours} h ${minutes} min` : `${minutes} min`),
+    battery: (percent) => `battery ${percent}%`,
+    range: (km) => `range ${km} km`,
     silenceTitle: 'MINI no data',
     silenceBody: (hours) => `No data from the car for ${hours} hours. Check the server and the CarData portal.`,
     testTitle: 'MINI test',
@@ -144,6 +162,10 @@ const TEXT = {
     closedBody: 'Her şey kapandı.',
     lockedTitle: 'MINI kilitlendi',
     lockedBody: 'Her şey kapalı.',
+    trip: (duration) => `sürüş ${duration}`,
+    duration: (hours, minutes) => (hours ? `${hours} sa ${minutes} dk` : `${minutes} dk`),
+    battery: (percent) => `batarya %${percent}`,
+    range: (km) => `menzil ${km} km`,
     silenceTitle: 'MINI veri yok',
     silenceBody: (hours) => `Araçtan ${hours} saattir veri gelmiyor. Sunucuyu ve CarData portalını kontrol et.`,
     testTitle: 'MINI deneme',
@@ -151,6 +173,7 @@ const TEXT = {
   },
 };
 const textFor = (cfg) => TEXT[cfg.language] ?? TEXT.en;
+export const textsFor = (language) => TEXT[language] ?? TEXT.en; // for the tests
 // "a", "a and b", "a, b and c"
 const joinList = (items, word) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} ${word} ${items[items.length - 1]}`);
 // With more than one car, the title names the car: "MINI left open (Countryman)".
@@ -216,6 +239,8 @@ export const DEFAULT_CONFIG = {
   remind_after_min: [30, 90], // Reminders: minutes after the first notification. [] = no reminder.
   park_after_idle_min: 30,
   lock_confirm: false, // true = a notification "locked, everything is closed" when you lock the car with all parts closed.
+  notify_trip: false, // true = the length of the last drive at the end of each notification, in parentheses.
+  notify_battery: false, // true = the battery level and the range at the end of each notification, in parentheses.
   silence_alert_hours: 0, // 0 = off. Otherwise one notification when the car sends no data for this time.
   vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
   ntfy_server: 'https://ntfy.sh',
@@ -265,8 +290,8 @@ export function checkConfig(cfg) {
       throw new Error(`"ntfy_tags.${kind}" must be an ntfy tag name like "rotating_light". A comma gives more than one. Now it is ${JSON.stringify(value)}.`);
     }
   }
-  if (typeof cfg.lock_confirm !== 'boolean') {
-    throw new Error(`"lock_confirm" must be true or false. Now it is ${JSON.stringify(cfg.lock_confirm)}.`);
+  for (const key of ['lock_confirm', 'notify_trip', 'notify_battery']) {
+    if (typeof cfg[key] !== 'boolean') throw new Error(`"${key}" must be true or false. Now it is ${JSON.stringify(cfg[key])}.`);
   }
   const hours = cfg.silence_alert_hours;
   if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0 || hours > MAX_SILENCE_HOURS) {
@@ -554,6 +579,11 @@ export class Watcher {
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
     this.lockChangedAt = 0;
     this.driveEndAt = 0; // time the lock left LOCKED (the car unlocks itself when you park)
+    this.lockedSince = 0; // time the lock last changed to LOCKED
+    this.tripActive = false; // a drive runs (set at the first odometer value, ends when the lock leaves LOCKED)
+    this.tripStartAt = 0; // the start of the last drive, 0 = unknown
+    this.tripEndAt = 0; // the end of the last drive
+    this.readings = new Map(); // attribute -> { value, unit } for the battery level and the range
     // The start of the park after the last drive, for the time in the text. It does not move until the next drive.
     this.parkLockAt = 0; // the first SECURED after the last drive
     this.parkDoorAt = 0; // the first driver door opening after the last drive (the driver gets out)
@@ -600,6 +630,11 @@ export class Watcher {
       lastDoorAt: this.lastDoorAt,
       lastUnlockAt: this.lastUnlockAt,
       confirmedAt: this.confirmedAt,
+      lockedSince: this.lockedSince,
+      tripActive: this.tripActive,
+      tripStartAt: this.tripStartAt,
+      tripEndAt: this.tripEndAt,
+      readings: [...this.readings],
       returnedAt: this.returnedAt,
       lockStatus: this.lockStatus,
       lockChangedAt: this.lockChangedAt,
@@ -626,6 +661,11 @@ export class Watcher {
     this.lastUnlockAt = snap.lastUnlockAt ?? 0;
     // A state from an older version: count the park now as confirmed, so the update sends no extra message.
     this.confirmedAt = snap.confirmedAt ?? this.clock();
+    this.lockedSince = snap.lockedSince ?? 0;
+    this.tripActive = Boolean(snap.tripActive);
+    this.tripStartAt = snap.tripStartAt ?? 0;
+    this.tripEndAt = snap.tripEndAt ?? 0;
+    this.readings = new Map(snap.readings ?? []);
     this.returnedAt = snap.returnedAt ?? 0;
     this.lockStatus = snap.lockStatus ?? null;
     this.lockChangedAt = snap.lockChangedAt ?? 0;
@@ -664,6 +704,57 @@ export class Watcher {
     return lockSoon ? this.parkLockAt : this.parkDoorAt || this.parkLockAt;
   }
 
+  // The first odometer value of a drive. The drive started when the lock became LOCKED (the car locks itself).
+  // A stop shorter than TRIP_GAP_S after the last unlock belongs to the same drive.
+  startTrip() {
+    if (this.tripActive || this.lockStatus !== 'LOCKED' || !this.lockedSince) return;
+    if (this.kmChangedAt - this.lockedSince > TRIP_START_WINDOW_S) return;
+    this.tripActive = true;
+    const sameTrip = this.tripStartAt && this.tripEndAt && this.lockedSince - this.tripEndAt <= TRIP_GAP_S;
+    if (!sameTrip) this.tripStartAt = this.lockedSince;
+  }
+
+  // The length of the last drive in seconds, or 0 when it is unknown.
+  tripSeconds() {
+    if (!this.tripStartAt) return 0;
+    const end = this.tripEndAt >= this.tripStartAt ? this.tripEndAt : this.kmChangedAt;
+    const seconds = end - this.tripStartAt;
+    return seconds >= 60 && seconds <= MAX_TRIP_S ? seconds : 0;
+  }
+
+  batteryPercent() {
+    for (const attribute of PERCENT_ATTRS) {
+      const reading = this.readings.get(attribute);
+      if (reading && reading.value >= 0 && reading.value <= 100) return Math.round(reading.value);
+    }
+    return null;
+  }
+
+  rangeKm() {
+    for (const attribute of RANGE_ATTRS) {
+      const reading = this.readings.get(attribute);
+      if (reading && reading.value >= 0) return Math.round(/^mi/i.test(reading.unit) ? reading.value * MILE_IN_KM : reading.value);
+    }
+    return null;
+  }
+
+  // " (drive 23 min, battery 64%, range 187 km)" at the end of a notification. Only what the settings ask for
+  // and what the program knows. An empty text when nothing is known.
+  detailsText(t) {
+    const parts = [];
+    if (this.cfg.notify_trip) {
+      const minutes = Math.round(this.tripSeconds() / 60);
+      if (minutes > 0) parts.push(t.trip(t.duration(Math.floor(minutes / 60), minutes % 60)));
+    }
+    if (this.cfg.notify_battery) {
+      const percent = this.batteryPercent();
+      if (percent !== null) parts.push(t.battery(percent));
+      const km = this.rangeKm();
+      if (km !== null) parts.push(t.range(km));
+    }
+    return parts.length ? ` (${parts.join(', ')})` : '';
+  }
+
   // "at" is the time of the message. A replay at startup passes the original time.
   onData(data, at = this.clock()) {
     this.dirty = true;
@@ -677,6 +768,7 @@ export class Watcher {
             this.kmChangedAt = at;
             this.parkLockAt = this.parkDoorAt = 0; // The car drives. The next park starts later.
             this.returnedAt = 0;
+            this.startTrip();
             this.notified = new Set(); // A new park, a new notification.
             // An alert stays open while a part is still open or a close waits for its message. Then
             // "everything is closed" also comes after a drive, when you park. Else forget the alert,
@@ -689,8 +781,17 @@ export class Watcher {
       } else if (name === LOCK) {
         const status = String(item?.value ?? '').toUpperCase();
         if (status && status !== this.lockStatus) {
-          if (this.lockStatus === 'LOCKED') this.driveEndAt = at;
-          if (status === 'LOCKED') this.parkLockAt = this.parkDoorAt = this.returnedAt = 0; // A drive starts.
+          if (this.lockStatus === 'LOCKED') {
+            this.driveEndAt = at;
+            if (this.tripActive) {
+              this.tripEndAt = at; // The car unlocks itself at the end of a drive.
+              this.tripActive = false;
+            }
+          }
+          if (status === 'LOCKED') {
+            this.parkLockAt = this.parkDoorAt = this.returnedAt = 0; // A drive starts.
+            this.lockedSince = at;
+          }
           if (status === 'UNLOCKED') this.lastUnlockAt = at;
           if (status === 'SECURED' && !this.parkLockAt) this.parkLockAt = at;
           this.lockStatus = status;
@@ -706,6 +807,10 @@ export class Watcher {
           this.lastDriverDoorAt = Math.max(this.lastDriverDoorAt, at);
           if (!this.parkDoorAt) this.parkDoorAt = at;
         }
+      }
+      if (PERCENT_ATTRS.includes(name) || RANGE_ATTRS.includes(name)) {
+        const number = Number(item?.value);
+        if (Number.isFinite(number)) this.readings.set(name, { value: number, unit: String(item?.unit ?? '') });
       }
       if (!WATCHED.some((pattern) => pattern.test(name))) continue;
       const value = String(item?.value ?? '').toUpperCase();
@@ -756,7 +861,7 @@ export class Watcher {
     if (now - this.lockChangedAt > CONFIRM_WINDOW_S) return;
     if (this.confirmedAt >= Math.max(this.lastDoorAt, this.kmChangedAt)) return;
     if (this.lockChangedAt - this.confirmedAt < RELOCK_WAIT_S) return;
-    const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody, 'default', tagFor(this.cfg, 'locked'));
+    const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;
   }
@@ -796,7 +901,7 @@ export class Watcher {
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {
-        const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody, 'default', tagFor(this.cfg, 'closed'));
+        const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'));
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
@@ -833,7 +938,7 @@ export class Watcher {
       }
       const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg)} ${when}`).join(', ');
       const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
-      const sent = await ntfy(this.cfg, title, t.openBody(items), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
+      const sent = await ntfy(this.cfg, title, t.openBody(items) + this.detailsText(t), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
