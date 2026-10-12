@@ -1231,6 +1231,13 @@ test('details: drive length, battery level and range after the text of an alert'
   assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24 \(drive 20 min, battery 64%, range 187 km\)$/);
 });
 
+test('details: the reminders have no details', async () => {
+  const sent = await simulate(tripWith(), 0, 70, DETAILS);
+  assert.deepEqual(sent.map(([m]) => m), [24, 54]);
+  assert.match(sent[0][1], /\(drive 20 min, battery 64%, range 187 km\)$/);
+  assert.match(sent[1][1], /MINI still open: Open: sunroof \(tilted\) since 00:24$/);
+});
+
 test('details: Turkish text', async () => {
   const sent = await simulate(tripWith(), 0, 40, { ...DETAILS, language: 'tr' });
   assert.match(sent[0][1], /\(sürüş 20 dk, batarya %64, menzil 187 km\)$/);

@@ -239,8 +239,8 @@ export const DEFAULT_CONFIG = {
   remind_after_min: [30, 90], // Reminders: minutes after the first notification. [] = no reminder.
   park_after_idle_min: 30,
   lock_confirm: false, // true = a notification "locked, everything is closed" when you lock the car with all parts closed.
-  notify_trip: false, // true = the length of the last drive at the end of each notification, in parentheses.
-  notify_battery: false, // true = the battery level and the range at the end of each notification, in parentheses.
+  notify_trip: false, // true = the length of the last drive at the end of the first notifications (not the reminders), in parentheses.
+  notify_battery: false, // true = the battery level and the range at the end of the first notifications (not the reminders), in parentheses.
   silence_alert_hours: 0, // 0 = off. Otherwise one notification when the car sends no data for this time.
   vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
   ntfy_server: 'https://ntfy.sh',
@@ -738,7 +738,7 @@ export class Watcher {
     return null;
   }
 
-  // " (drive 23 min, battery 64%, range 187 km)" at the end of a notification. Only what the settings ask for
+  // " (drive 23 min, battery 64%, range 187 km)" at the end of a notification. Not for a reminder. Only what the settings ask for
   // and what the program knows. An empty text when nothing is known.
   detailsText(t) {
     const parts = [];
@@ -938,7 +938,7 @@ export class Watcher {
       }
       const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg)} ${when}`).join(', ');
       const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
-      const sent = await ntfy(this.cfg, title, t.openBody(items) + this.detailsText(t), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
+      const sent = await ntfy(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;

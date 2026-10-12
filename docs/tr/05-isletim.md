@@ -63,8 +63,8 @@ sudo systemctl restart mini-watch
 | `remind_after_min` | `[30, 90]` | Hatırlatmalar, ilk bildirimden kaç dakika sonra. `[]` = hatırlatma yok. En çok 10 değer, her biri öncekinden büyük. |
 | `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |
 | `ntfy_tags` | aşağıya bak | Başlığın başındaki emoji. Her bildirim türü için bir ntfy etiket adı: `open`, `still_open`, `closed`, `locked`, `silence`, `test`. Varsayılanlar: `warning` (⚠️), `warning`, `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `car` (🚗). Örnek: `{"open": "rotating_light"}`. Yazmadığın tür varsayılanını korur. Adlar [ntfy emoji listesinde](https://docs.ntfy.sh/emojis/). |
-| `notify_trip` | `false` | `true` = her bildirimin sonunda son sürüşün süresi, parantez içinde. Örnek: `(sürüş 23 dk)`. |
-| `notify_battery` | `false` | `true` = her bildirimin sonunda batarya seviyesi ve menzil, parantez içinde. Örnek: `(batarya %64, menzil 187 km)`. Öznitelikler akışta olmalı. |
+| `notify_trip` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) son sürüşün süresi, parantez içinde. Örnek: `(sürüş 23 dk)`. |
+| `notify_battery` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) batarya seviyesi ve menzil, parantez içinde. Örnek: `(batarya %64, menzil 187 km)`. Öznitelikler akışta olmalı. |
 | `lock_confirm` | `false` | `true` = aracı kilitleyince ve her parça kapalıyken "kilitlendi, her şey kapalı" mesajı. Sistemin çalıştığını gösterir. |
 | `silence_alert_hours` | 0 (kapalı) | Araçtan bu kadar saat veri gelmezse tek bir bildirim. Araç uyurken hiçbir şey yollamaz. Bu yüzden uzun süre park hâlinde de bu bildirim gelir. |
 | `vehicle_names` | `{}` | Hesapta birden fazla araç varsa araçların adları. Örnek: `{"VIN-OF-CAR-1": "Countryman"}` |
