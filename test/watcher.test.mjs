@@ -17,6 +17,7 @@ import {
   formatTime,
   label,
   describeParts,
+  ntfy,
   textsFor,
   tagFor,
   parseStreamMessage,
@@ -1326,4 +1327,77 @@ test('details: the settings must be true or false', () => {
   for (const key of ['notify_trip', 'notify_battery']) {
     assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, [key]: 'yes' }), new RegExp(key));
   }
+});
+
+test('details: a stop with SELECTIVELOCKED does not end the drive (the unlock at the arrival is the end)', async () => {
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }],
+    [2, { [LOCK]: 'LOCKED' }],
+    ...drive(5, 11, 101),
+    [12, { [LOCK]: 'SELECTIVELOCKED' }], // a rear door opens while the car still rolls
+    [14, { [KM]: 200, [LOCK]: 'UNLOCKED' }], // the arrival
+    [15, DOOR_OPEN],
+    [15.2, DOOR_CLOSED],
+    [16, { [LOCK]: 'SECURED' }],
+  ];
+  const sent = await simulate(events, 0, 60, { notify_trip: true });
+  assert.match(sent[0][1], /\(drive 12 min\)$/, 'from minute 2 to minute 14, not to minute 12');
+});
+
+test('details: the odometer after the lock left LOCKED extends the drive', async () => {
+  const events = [
+    [0, { [KM]: 100, [TILT]: 'OPEN' }],
+    [2, { [LOCK]: 'LOCKED' }],
+    ...drive(5, 11, 101),
+    [12, { [LOCK]: 'SELECTIVELOCKED' }],
+    [15, { [KM]: 300 }],
+    [16, { [LOCK]: 'UNLOCKED' }],
+    [17, DOOR_OPEN],
+    [17.2, DOOR_CLOSED],
+    [18, { [LOCK]: 'SECURED' }],
+  ];
+  const sent = await simulate(events, 0, 60, { notify_trip: true });
+  assert.match(sent[0][1], /\(drive 14 min\)$/, 'from minute 2 to the unlock at minute 16');
+});
+
+test('log: the line of a sent notification has the title, the text and the ntfy id', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ id: 'abc123XYZ', time: 1, event: 'message', topic: 'x' }), { status: 200 });
+  let lines;
+  try {
+    lines = await logsDuring(async () => {
+      assert.equal(await ntfy(ntfyConfig, 'MINI kilitlendi', 'Her şey kapalı.', 'default', 'lock'), true);
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.deepEqual(lines, ['Notification sent: MINI kilitlendi: Her şey kapalı. (ntfy id abc123XYZ)']);
+});
+
+test('log: a failed notification names the reason', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response('server error', { status: 503 });
+  let lines;
+  try {
+    lines = await logsDuring(async () => {
+      assert.equal(await ntfy(ntfyConfig, 't', 'm'), false);
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.deepEqual(lines, ['Notification failed: HTTP 503']);
+});
+
+test('lock confirmation: a suppressed lock counts as handled, a later lock without a door gives nothing', async () => {
+  const events = lockedTrip([
+    [40, { [TILT]: 'CLOSED' }], // "left open" at 24, "everything is closed" at 40
+    [40.2, { [LOCK]: 'UNLOCKED' }],
+    [40.4, DOOR_OPEN],
+    [40.6, DOOR_CLOSED],
+    [40.8, { [LOCK]: 'SECURED' }], // less than 2 minutes after the closed message: nothing, but handled
+    [100, { [LOCK]: 'UNLOCKED' }], // hours later: a key near the car, no door
+    [100.25, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 160, CONFIRM);
+  assert.deepEqual(sent.map(([m]) => m), [24, 40]);
 });

@@ -33,7 +33,7 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 |---|---|
 | `Connected to the stream.` and `Subscribed: qos0` | The connection is good. |
 | `Message: vehicle....` | Data arrived from the car. |
-| `Notification sent: ...` | A notification went to your phone. |
+| `Notification sent: ...` | ntfy accepted a notification. The line has the title, the text and the ntfy message id. ntfy does not tell whether the phone received it. To list all sent notifications: `sudo journalctl -u mini-watch --no-pager \| grep "Notification"`. |
 | `The token expires soon. Refreshing it.` | The normal refresh. It happens each hour. |
 | `Reconnecting in 5 seconds.` | The connection closed. The program reconnects. You see this line each hour after a token refresh. |
 | `MQTT error: Keepalive timeout` | A network break. It is normal when rare. If it is frequent, check the network. |

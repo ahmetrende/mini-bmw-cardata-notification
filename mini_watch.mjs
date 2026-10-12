@@ -462,8 +462,15 @@ export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning'
       }),
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
-    await resp.body?.cancel(); // The program does not read the answer.
-    log(resp.ok ? `Notification sent: ${text}` : `Notification failed: HTTP ${resp.status}`);
+    // The answer of ntfy has the id of the message. The log keeps it, so a message can be found in the ntfy app
+    // and in the cache of ntfy (https://ntfy.sh/<topic>/json?poll=1&since=12h).
+    let id = '';
+    try {
+      id = String(JSON.parse(await readBody(resp)).id ?? '');
+    } catch {
+      await resp.body?.cancel?.();
+    }
+    log(resp.ok ? `Notification sent: ${title}: ${text}${id ? ` (ntfy id ${id})` : ''}` : `Notification failed: HTTP ${resp.status}`);
     return resp.ok;
   } catch (err) {
     log(`Notification failed: ${err.message}`);
@@ -707,6 +714,11 @@ export class Watcher {
   // The first odometer value of a drive. The drive started when the lock became LOCKED (the car locks itself).
   // A stop shorter than TRIP_GAP_S after the last unlock belongs to the same drive.
   startTrip() {
+    // The car still moves after the lock left LOCKED (for example a stop with SELECTIVELOCKED): the drive goes on.
+    if (!this.tripActive && this.tripStartAt && this.tripEndAt && this.lockStatus !== 'LOCKED' && this.kmChangedAt - this.tripEndAt <= TRIP_GAP_S) {
+      this.tripEndAt = this.kmChangedAt;
+      return;
+    }
     if (this.tripActive || this.lockStatus !== 'LOCKED' || !this.lockedSince) return;
     if (this.kmChangedAt - this.lockedSince > TRIP_START_WINDOW_S) return;
     this.tripActive = true;
@@ -792,7 +804,11 @@ export class Watcher {
             this.parkLockAt = this.parkDoorAt = this.returnedAt = 0; // A drive starts.
             this.lockedSince = at;
           }
-          if (status === 'UNLOCKED') this.lastUnlockAt = at;
+          if (status === 'UNLOCKED') {
+            this.lastUnlockAt = at;
+            // The unlock at the end of a drive after a stop with SELECTIVELOCKED is the end of the drive.
+            if (this.lockStatus === 'SELECTIVELOCKED' && this.tripStartAt && this.tripEndAt && at - this.tripEndAt <= TRIP_GAP_S) this.tripEndAt = at;
+          }
           if (status === 'SECURED' && !this.parkLockAt) this.parkLockAt = at;
           this.lockStatus = status;
           this.lockChangedAt = at;
@@ -860,7 +876,10 @@ export class Watcher {
     if (now - this.lockChangedAt < this.cfg.alert_after_lock_min * 60) return;
     if (now - this.lockChangedAt > CONFIRM_WINDOW_S) return;
     if (this.confirmedAt >= Math.max(this.lastDoorAt, this.kmChangedAt)) return;
-    if (this.lockChangedAt - this.confirmedAt < RELOCK_WAIT_S) return;
+    if (this.lockChangedAt - this.confirmedAt < RELOCK_WAIT_S) {
+      this.confirmedAt = now; // This lock is handled. A later lock without a door must not count the old door openings.
+      return;
+    }
     const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;

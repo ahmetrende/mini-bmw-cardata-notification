@@ -35,7 +35,7 @@ Log satırları her zaman İngilizce yazılır. Yalnızca bildirim metni `langua
 |---|---|
 | `Connected to the stream.` ve `Subscribed: qos0` | Bağlantı sağlıklı. |
 | `Message: vehicle....` | Araçtan veri geldi. |
-| `Notification sent: ...` | Telefonuna bildirim yollandı. |
+| `Notification sent: ...` | ntfy bildirimi kabul etti. Satırda başlık, metin ve ntfy mesaj numarası var. Telefonun bildirimi alıp almadığını ntfy söylemez. Yollanan tüm bildirimleri listelemek için: `sudo journalctl -u mini-watch --no-pager \| grep "Notification"`. |
 | `The token expires soon. Refreshing it.` | Normal yenileme. Her saat olur. |
 | `Reconnecting in 5 seconds.` | Bağlantı kapandı, program yeniden bağlanıyor. Token yenilemesinden sonra bu satırı her saat görürsün. |
 | `MQTT error: Keepalive timeout` | Ağ kesintisi. Arada bir olması normal. Sık oluyorsa ağı kontrol et. |
