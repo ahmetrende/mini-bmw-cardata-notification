@@ -244,6 +244,7 @@ export const DEFAULT_CONFIG = {
   lock_confirm: false, // true = a notification "locked, everything is closed" when you lock the car with all parts closed.
   notify_trip: false, // true = the length of the last drive at the end of the first notifications (not the reminders), in parentheses.
   notify_battery: false, // true = the battery level and the range at the end of the first notifications (not the reminders), in parentheses.
+  notify_battery_below_pct: 100, // 1 to 100. The battery level and the range show only when the level is below this percent. 100 = always.
   silence_alert_hours: 0, // 0 = off. Otherwise one notification when the car sends no data for this time.
   vehicle_names: {}, // {"VIN": "name"}. Only needed for an account with more than one car.
   ntfy_server: 'https://ntfy.sh',
@@ -295,6 +296,10 @@ export function checkConfig(cfg) {
   }
   for (const key of ['lock_confirm', 'notify_trip', 'notify_battery']) {
     if (typeof cfg[key] !== 'boolean') throw new Error(`"${key}" must be true or false. Now it is ${JSON.stringify(cfg[key])}.`);
+  }
+  const below = cfg.notify_battery_below_pct;
+  if (typeof below !== 'number' || !Number.isFinite(below) || below < 1 || below > 100) {
+    throw new Error(`"notify_battery_below_pct" must be a number from 1 to 100 (100 = always). Now it is ${JSON.stringify(below)}.`);
   }
   const hours = cfg.silence_alert_hours;
   if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0 || hours > MAX_SILENCE_HOURS) {
@@ -755,7 +760,8 @@ export class Watcher {
   }
 
   // " (drive 23 min, battery 64%, range 187 km)" at the end of a notification. Not for a reminder. Only what the settings ask for
-  // and what the program knows. An empty text when nothing is known.
+  // and what the program knows. An empty text when nothing is known. With notify_battery_below_pct under 100, the battery level
+  // and the range show only when the level is known and below that percent.
   detailsText(t) {
     const parts = [];
     if (this.cfg.notify_trip) {
@@ -764,9 +770,12 @@ export class Watcher {
     }
     if (this.cfg.notify_battery) {
       const percent = this.batteryPercent();
-      if (percent !== null) parts.push(t.battery(percent));
-      const km = this.rangeKm();
-      if (km !== null) parts.push(t.range(km));
+      const limit = this.cfg.notify_battery_below_pct;
+      if (limit >= 100 || (percent !== null && percent < limit)) {
+        if (percent !== null) parts.push(t.battery(percent));
+        const km = this.rangeKm();
+        if (km !== null) parts.push(t.range(km));
+      }
     }
     return parts.length ? ` (${parts.join(', ')})` : '';
   }

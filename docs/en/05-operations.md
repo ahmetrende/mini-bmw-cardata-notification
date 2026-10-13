@@ -63,6 +63,7 @@ sudo systemctl restart mini-watch
 | `ntfy_tags` | see below | The emoji at the start of the title, one ntfy tag name for each kind: `open`, `still_open`, `closed`, `locked`, `silence`, `test`. Defaults: `warning` (⚠️), `warning`, `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `car` (🚗). Example: `{"open": "rotating_light"}`. A missing kind keeps its default. The names are in [the ntfy emoji list](https://docs.ntfy.sh/emojis/). |
 | `notify_trip` | `false` | `true` = the length of the last drive at the end of the first notifications (not the reminders), in parentheses. Example: `(drive 23 min)`. |
 | `notify_battery` | `false` | `true` = the battery level and the range at the end of the first notifications (not the reminders), in parentheses. Example: `(battery 64%, range 187 km)`. The attributes must be in the stream. |
+| `notify_battery_below_pct` | 100 | A number from 1 to 100. The battery level and the range show only when the level is below this percent. Example: `30` shows them only below 30%. 100 = always. Only with `notify_battery` on. |
 | `lock_confirm` | `false` | `true` = a message "locked, everything is closed" when you lock the car and all parts are closed. It shows that the system works. |
 | `silence_alert_hours` | 0 (off) | One notification when the car sends no data for this many hours. The car sends nothing while it sleeps, so a long parked time also gives this notification. |
 | `vehicle_names` | `{}` | Names for the cars of an account with more than one car. Example: `{"VIN-OF-CAR-1": "Countryman"}` |

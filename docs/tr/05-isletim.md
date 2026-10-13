@@ -65,6 +65,7 @@ sudo systemctl restart mini-watch
 | `ntfy_tags` | aşağıya bak | Başlığın başındaki emoji. Her bildirim türü için bir ntfy etiket adı: `open`, `still_open`, `closed`, `locked`, `silence`, `test`. Varsayılanlar: `warning` (⚠️), `warning`, `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `car` (🚗). Örnek: `{"open": "rotating_light"}`. Yazmadığın tür varsayılanını korur. Adlar [ntfy emoji listesinde](https://docs.ntfy.sh/emojis/). |
 | `notify_trip` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) son sürüşün süresi, parantez içinde. Örnek: `(sürüş 23 dk)`. |
 | `notify_battery` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) batarya seviyesi ve menzil, parantez içinde. Örnek: `(batarya %64, menzil 187 km)`. Öznitelikler akışta olmalı. |
+| `notify_battery_below_pct` | 100 | 1 ile 100 arasında bir sayı. Batarya seviyesi ve menzil, seviye bu yüzdenin altındaysa görünür. Örnek: `30` yazarsan yalnız %30'un altında görünür. 100 = her zaman. Yalnız `notify_battery` açıksa çalışır. |
 | `lock_confirm` | `false` | `true` = aracı kilitleyince ve her parça kapalıyken "kilitlendi, her şey kapalı" mesajı. Sistemin çalıştığını gösterir. |
 | `silence_alert_hours` | 0 (kapalı) | Araçtan bu kadar saat veri gelmezse tek bir bildirim. Araç uyurken hiçbir şey yollamaz. Bu yüzden uzun süre park hâlinde de bu bildirim gelir. |
 | `vehicle_names` | `{}` | Hesapta birden fazla araç varsa araçların adları. Örnek: `{"VIN-OF-CAR-1": "Countryman"}` |

@@ -1277,6 +1277,40 @@ test('details: a value outside the range or not a number is ignored', async () =
   assert.doesNotMatch(sent[0][1], /\((drive|battery|range)/);
 });
 
+test('details: with notify_battery_below_pct the battery level and the range show only below that level', async () => {
+  const limited = { ...DETAILS, notify_battery_below_pct: 30 };
+  const low = await simulate(lockedTrip([[7, { [SOC]: 24.6, [RANGE_KOMBI]: { value: 80, unit: 'km' } }]]), 0, 40, limited);
+  assert.match(low[0][1], /\(drive 20 min, battery 25%, range 80 km\)$/);
+  const high = await simulate(tripWith(), 0, 40, limited);
+  assert.match(high[0][1], /\(drive 20 min\)$/, 'only the drive length above the limit');
+  const exact = await simulate(lockedTrip([[7, { [SOC]: 30, [RANGE_KOMBI]: 100 }]]), 0, 40, limited);
+  assert.match(exact[0][1], /\(drive 20 min\)$/, 'exactly 30% is not below 30%');
+  const rounded = await simulate(lockedTrip([[7, { [SOC]: 29.6, [RANGE_KOMBI]: 100 }]]), 0, 40, limited);
+  assert.match(rounded[0][1], /\(drive 20 min\)$/, 'the rounded level 30% is not below 30%');
+  const noBattery = await simulate(lockedTrip([[7, { [RANGE_KOMBI]: 80 }]]), 0, 40, limited);
+  assert.match(noBattery[0][1], /\(drive 20 min\)$/, 'without the level the program cannot know that it is low');
+});
+
+test('details: without notify_trip a low level shows alone, a high level adds nothing', async () => {
+  const sent = await simulate(lockedTrip([[7, { [SOC]: 12, [RANGE_KOMBI]: 40 }]]), 0, 40, { notify_battery: true, notify_battery_below_pct: 30 });
+  assert.match(sent[0][1], /\(battery 12%, range 40 km\)$/);
+  const high = await simulate(tripWith(), 0, 40, { notify_battery: true, notify_battery_below_pct: 30 });
+  assert.doesNotMatch(high[0][1], /\((drive|battery|range)/, 'nothing to add');
+});
+
+test('details: the level of 100% shows by default (no limit)', async () => {
+  const full = await simulate(lockedTrip([[7, { [SOC]: 100, [RANGE_KOMBI]: 300 }]]), 0, 40, DETAILS);
+  assert.match(full[0][1], /\(drive 20 min, battery 100%, range 300 km\)$/);
+  assert.equal(DEFAULT_CONFIG.notify_battery_below_pct, 100);
+});
+
+test('details: notify_battery_below_pct must be a number from 1 to 100', () => {
+  for (const ok of [1, 30, 100]) checkConfig({ ...DEFAULT_CONFIG, notify_battery_below_pct: ok });
+  for (const bad of [0, 101, -5, '30', null, NaN]) {
+    assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, notify_battery_below_pct: bad }), /notify_battery_below_pct/);
+  }
+});
+
 test('details: a stop shorter than 10 minutes belongs to the same drive, a longer stop does not', async () => {
   const leg = (from) => [[from, { [LOCK]: 'LOCKED' }], ...drive(from + 3, from + 10, 200 + from)];
   const trip = (stop) => [
