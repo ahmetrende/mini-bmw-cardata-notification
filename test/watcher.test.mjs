@@ -1250,11 +1250,94 @@ test('details: Turkish text', async () => {
   assert.match(sent[0][1], /\(sürüş 20 dk, batarya %64, menzil 187 km\)$/);
 });
 
-test('details: also after "everything is closed" and after a lock confirmation', async () => {
+test('details: a lock confirmation after a drive has them, "everything is closed" right after the alert has none', async () => {
   const closed = await simulate(tripWith([[40, { [TILT]: 'CLOSED' }]]), 0, 80, DETAILS);
-  assert.match(closed[1][1], /MINI: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+  assert.match(closed[0][1], /\(drive 20 min, battery 64%, range 187 km\)$/, 'the alert after the drive');
+  assert.match(closed[1][1], /MINI: Everything is closed\.$/, 'the odometer did not rise since the alert');
   const locked = await simulate(tripWith([[23.5, { [TILT]: 'CLOSED' }]]), 0, 80, { ...DETAILS, lock_confirm: true });
   assert.match(locked[0][1], /MINI locked: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
+test('details: "everything is closed" has them when the car drove since the alert', async () => {
+  const events = tripWith([
+    [30, { [LOCK]: 'UNLOCKED' }], // back at the car, the sunroof is still open
+    [31, DOOR_OPEN],
+    [31.2, DOOR_CLOSED],
+    [36, { [LOCK]: 'LOCKED' }],
+    ...drive(39, 52, 130),
+    [48, { [TILT]: 'CLOSED' }], // the sunroof closes during the drive
+    [56, { [LOCK]: 'UNLOCKED' }],
+    [57, DOOR_OPEN],
+    [57.2, DOOR_CLOSED],
+    [58, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 100, DETAILS);
+  assert.equal(sent.length, 2);
+  assert.match(sent[0][1], /MINI left open: .*\(drive 20 min, battery 64%, range 187 km\)$/);
+  assert.match(sent[1][1], /MINI: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
+test('details: no drive since the last notification, no details (opening the doors and locking again)', async () => {
+  const events = tripWith([
+    [23.5, { [TILT]: 'CLOSED' }],
+    [140, { [LOCK]: 'UNLOCKED' }], // 2 hours later: a door opens, the car locks again, the car did not drive
+    [141, DOOR_OPEN],
+    [141.2, DOOR_CLOSED],
+    [142, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 200, { ...DETAILS, lock_confirm: true });
+  assert.equal(sent.length, 2);
+  assert.match(sent[0][1], /MINI locked: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/, 'after the drive');
+  assert.match(sent[1][1], /MINI locked: Everything is closed\.$/, 'no drive since');
+});
+
+test('details: the next drive brings them back', async () => {
+  const events = tripWith([
+    [23.5, { [TILT]: 'CLOSED' }],
+    [140, { [LOCK]: 'UNLOCKED' }],
+    [141, DOOR_OPEN],
+    [141.2, DOOR_CLOSED],
+    [142, { [LOCK]: 'SECURED' }],
+    [200, { [LOCK]: 'UNLOCKED' }], // the second drive: 9 minutes
+    [201, DOOR_OPEN],
+    [201.2, DOOR_CLOSED],
+    [202, { [LOCK]: 'LOCKED' }],
+    ...drive(205, 211, 300),
+    [211, { [LOCK]: 'UNLOCKED' }],
+    [212, DOOR_OPEN],
+    [212.2, DOOR_CLOSED],
+    [213, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 260, { ...DETAILS, lock_confirm: true });
+  assert.equal(sent.length, 3);
+  assert.match(sent[1][1], /MINI locked: Everything is closed\.$/);
+  assert.match(sent[2][1], /MINI locked: Everything is closed\. \(drive 9 min, battery 64%, range 187 km\)$/);
+});
+
+test('details: a car without an odometer value shows what it has', async () => {
+  const events = [
+    [0, { [TILT]: 'OPEN', [SOC]: 80 }],
+    [1, DOOR_OPEN],
+    [1.2, DOOR_CLOSED],
+    [22, DOOR_OPEN],
+    [22.2, DOOR_CLOSED],
+  ];
+  const sent = await simulate(events, 0, 60, DETAILS);
+  assert.match(sent[0][1], /\(battery 80%\)$/);
+});
+
+test('details: a state from an older version (no lastSentAt) shows no details for the old drive', () => {
+  const { watcher, at } = virtualWatcher(DETAILS);
+  watcher.onData(msg({ [KM]: 100, [LOCK]: 'LOCKED' }), at(2));
+  watcher.onData(msg({ [KM]: 101, [SOC]: 71 }), at(6));
+  watcher.onData(msg({ [LOCK]: 'UNLOCKED' }), at(22));
+  const snap = JSON.parse(JSON.stringify(watcher.snapshot()));
+  assert.equal(watcher.detailsText(textsFor('en')), ' (drive 20 min, battery 71%)', 'a new state: the drive is not announced yet');
+  delete snap.lastSentAt;
+  const restored = virtualWatcher(DETAILS);
+  restored.at(30);
+  restored.watcher.restoreWatch(snap);
+  assert.equal(restored.watcher.detailsText(textsFor('en')), '');
 });
 
 test('details: off by default, and each part has its own setting', async () => {

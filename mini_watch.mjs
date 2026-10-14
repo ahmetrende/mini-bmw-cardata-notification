@@ -589,6 +589,7 @@ export class Watcher {
     this.lastDoorAt = 0; // time any door last opened
     this.lastUnlockAt = 0; // time the lock last changed to UNLOCKED
     this.confirmedAt = 0; // time of the last "everything is closed" message or lock confirmation
+    this.lastSentAt = 0; // time of the last notification that can have details (not a reminder). The details show only after the odometer rose since then.
     this.allClosedSince = 0; // time the last open part closed (0 = unknown, counts as long ago)
     this.returnedAt = 0; // someone came back to the car after a notification (0 after a drive)
     this.doorOpen = new Map(); // door attribute -> last value. The car repeats an open door in each message.
@@ -646,6 +647,7 @@ export class Watcher {
       lastDoorAt: this.lastDoorAt,
       lastUnlockAt: this.lastUnlockAt,
       confirmedAt: this.confirmedAt,
+      lastSentAt: this.lastSentAt,
       lockedSince: this.lockedSince,
       tripActive: this.tripActive,
       tripStartAt: this.tripStartAt,
@@ -677,6 +679,8 @@ export class Watcher {
     this.lastUnlockAt = snap.lastUnlockAt ?? 0;
     // A state from an older version: count the park now as confirmed, so the update sends no extra message.
     this.confirmedAt = snap.confirmedAt ?? this.clock();
+    // A state from an older version: count the restore as the last notification, so the old drive shows no details.
+    this.lastSentAt = snap.lastSentAt ?? this.clock();
     this.lockedSince = snap.lockedSince ?? 0;
     this.tripActive = Boolean(snap.tripActive);
     this.tripStartAt = snap.tripStartAt ?? 0;
@@ -762,7 +766,10 @@ export class Watcher {
   // " (drive 23 min, battery 64%, range 187 km)" at the end of a notification. Not for a reminder. Only what the settings ask for
   // and what the program knows. An empty text when nothing is known. With notify_battery_below_pct under 100, the battery level
   // and the range show only when the level is known and below that percent.
+  // The details belong to a drive: they show only when the odometer rose since the last notification. A car
+  // without any odometer value shows what it has.
   detailsText(t) {
+    if (this.lastKm !== null && this.kmChangedAt <= this.lastSentAt) return '';
     const parts = [];
     if (this.cfg.notify_trip) {
       const minutes = Math.round(this.tripSeconds() / 60);
@@ -899,6 +906,7 @@ export class Watcher {
     const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;
+    this.lastSentAt = now;
   }
 
   async check() {
@@ -942,6 +950,7 @@ export class Watcher {
         this.alerted = false;
         this.sawClose = false;
         this.confirmedAt = this.clock(); // This message says it already. No lock confirmation right after it.
+        this.lastSentAt = this.clock();
       } else if (this.cfg.lock_confirm) {
         await this.confirmLock(t);
       }
@@ -978,7 +987,10 @@ export class Watcher {
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
-      if (added) this.firstNotifyAt = this.clock();
+      if (added) {
+        this.firstNotifyAt = this.clock();
+        this.lastSentAt = this.clock(); // A reminder has no details, so it does not count.
+      }
       this.notified = current;
       this.lastNotify = this.clock();
     }
