@@ -138,7 +138,15 @@ Do not use the **Reset** button in the console. Do not use `gcloud compute insta
 
 ## Disk use
 
-The system journal limits the size of the log. The program limits the message history to two files of 10 MB. You do not need to clean anything. To see the free space, run `sudo mini-watch doctor`.
+The system journal keeps the log of the last 7 days. A job deletes the older log files every night at 05:00 in the time zone of the server. The job deletes whole files. So the log can reach back 8 days. The program limits the message history to two files of 10 MB. You do not need to clean anything. To see the free space, run `sudo mini-watch doctor`.
+
+To see the next run of the job, run this command:
+
+```bash
+sudo systemctl list-timers mini-watch-log-clean.timer
+```
+
+To change the 7 days, change `7d` and `+7` in `deploy/mini-watch-log-clean.service`. Then run `sudo bash deploy/install.sh` again.
 
 ## Delete everything
 

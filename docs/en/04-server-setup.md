@@ -138,9 +138,9 @@ cd mini-bmw-cardata-notification
 sudo bash deploy/install.sh
 ```
 
-The script installs Node 22, creates the `miniwatch` user, installs the program in `/opt/mini-watch/releases` and installs the service. Your settings and data go to `/var/lib/mini-watch`. Only the `miniwatch` user can read that folder. The script also installs the `mini-watch` command. On a server with less than 2 GB of memory and no swap, it adds a 1 GB swap file. At the end it shows "Install done."
+The script installs Node 22, creates the `miniwatch` user, installs the program in `/opt/mini-watch/releases` and installs the service. Your settings and data go to `/var/lib/mini-watch`. Only the `miniwatch` user can read that folder. The script also installs the `mini-watch` command. On a server with less than 2 GB of memory and no swap, it adds a 1 GB swap file. The script also sets up a nightly clean-up of old logs. The log of the last 7 days stays. At the end it shows "Install done."
 
-The time zone is optional. It changes only the times in the log:
+The time zone is optional. It changes the times in the log. It also sets the time of the nightly log clean-up (05:00 in this time zone):
 
 ```bash
 sudo timedatectl set-timezone Europe/Istanbul

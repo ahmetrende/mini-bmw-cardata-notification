@@ -36,6 +36,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Server | `gcloud compute instances list` shows `RUNNING`. |
 | Firewall | `gcloud compute ssh ... --tunnel-through-iap` works. A connection to port 22 from the internet fails. |
 | Install | `sudo bash deploy/install.sh` ends with "Install done." |
+| Log clean-up | `sudo systemctl list-timers mini-watch-log-clean.timer` shows the next run at 05:00 (server time). |
 | Login | The log line "Login done. Granted scope:" has `cardata:streaming:read`. |
 | Service | The log shows "Connected to the stream." and "Subscribed: qos0". |
 | Notification | `sudo mini-watch ntfy-test` puts a message on the phone. |
@@ -54,7 +55,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **macOS system Python cannot connect to the stream.** The broker needs TLS 1.3. This project uses Node 22 or newer.
 - **A restart can send a wrong notification.** After a restart, an empty list of open parts can mean "no data yet". The program handles this. Still, before you restart a running server, do a dry run (see below).
 - **The car sends data only when something changes.** An asleep car sends nothing. A remote light signal or an open and close of a door wakes the data.
-- **Server paths.** The code is in `/opt/mini-watch/releases/<date>-<commit>` and belongs to root. `/opt/mini-watch/current` points to the release in use. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. Use `sudo mini-watch login`, `sudo mini-watch ntfy-test` and `sudo mini-watch doctor`. Do not start a second copy with `run`.
+- **Server paths.** The code is in `/opt/mini-watch/releases/<date>-<commit>` and belongs to root. `/opt/mini-watch/current` points to the release in use. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. The timer `mini-watch-log-clean.timer` deletes logs older than 7 days every night at 05:00 (server time). `install.sh` installs it. Use `sudo mini-watch login`, `sudo mini-watch ntfy-test` and `sudo mini-watch doctor`. Do not start a second copy with `run`.
 - **Update and rollback.** `sudo bash deploy/install.sh` checks the new release, switches, and waits for `Subscribed`. Without it, the script goes back to the release before. `sudo bash deploy/install.sh --rollback` goes back by hand.
 - **The tested car (MINI Countryman E, U25) sends no ignition, motion or speed data.** It sends the central lock (`vehicle.cabin.door.status`: `UNLOCKED`, `LOCKED` while it drives, `SECURED` after a lock from outside). It does not send `alarm.armStatus`. Do not promise more. Another car can differ.
 
@@ -95,4 +96,5 @@ Bu dosya, projeyi kurmaya yardım eden bir yapay zekâ aracı içindir. Kurulum 
 - Sunucuyu sert sıfırlama. `sudo systemctl reboot` kullan.
 - Aynı MINI hesabıyla programı iki yerde çalıştırma.
 - Çalışan sunucuyu yeniden başlatmadan önce `tools/replay.mjs` ile hangi bildirimlerin gideceğini gör. Bunu sunucuda değil, başka bir bilgisayarda yap.
+- `install.sh`, 7 günden eski log'u her gece 05:00'te (sunucu saati) silen `mini-watch-log-clean.timer` dosyasını kurar.
 - Ülke adını "Türkiye" yaz.

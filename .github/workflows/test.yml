@@ -28,7 +28,7 @@ jobs:
           sh -n deploy/mini-watch
       - name: systemd unit
         run: |
-          systemd-analyze verify deploy/mini-watch.service 2>&1 \
+          systemd-analyze verify deploy/mini-watch.service deploy/mini-watch-log-clean.service deploy/mini-watch-log-clean.timer 2>&1 \
             | grep -v -e "Command /usr/local/bin/node is not executable" -e "Unit is bound to inactive unit" \
             | tee /tmp/verify.txt
           test ! -s /tmp/verify.txt

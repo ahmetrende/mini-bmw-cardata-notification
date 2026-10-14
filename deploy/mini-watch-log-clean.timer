@@ -1,0 +1,11 @@
+[Unit]
+Description=Delete old logs every night at 05:00 (time zone of the server)
+
+[Timer]
+# 05:00 in the time zone of the server. To set it: sudo timedatectl set-timezone Europe/Istanbul
+OnCalendar=*-*-* 05:00:00
+# If the server was off at 05:00, the job runs when the server starts.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

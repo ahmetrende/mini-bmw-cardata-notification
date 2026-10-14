@@ -140,7 +140,15 @@ Konsoldaki **Reset** düğmesini veya `gcloud compute instances reset` komutunu 
 
 ## Disk kullanımı
 
-Log'un boyutunu sistem günlüğü kendisi sınırlar. Program mesaj geçmişini 10 MB'lık iki dosyayla sınırlar. Bir şey temizlemen gerekmez. Boş alanı görmek için `sudo mini-watch doctor` komutunu çalıştır.
+Sistem günlüğü son 7 günün log'unu tutur. Bir iş, eski log dosyalarını her gece sunucunun saat diliminde 05:00'te siler. İş dosyaları bütün olarak siler. Bu yüzden log 8 güne kadar geriye gidebilir. Program mesaj geçmişini 10 MB'lık iki dosyayla sınırlar. Bir şey temizlemen gerekmez. Boş alanı görmek için `sudo mini-watch doctor` komutunu çalıştır.
+
+İşin bir sonraki çalışma zamanını görmek için bu komutu çalıştır:
+
+```bash
+sudo systemctl list-timers mini-watch-log-clean.timer
+```
+
+7 günü değiştirmek için `deploy/mini-watch-log-clean.service` dosyasındaki `7d` ve `+7` değerlerini değiştir. Sonra `sudo bash deploy/install.sh` komutunu yeniden çalıştır.
 
 ## Her şeyi sil
 

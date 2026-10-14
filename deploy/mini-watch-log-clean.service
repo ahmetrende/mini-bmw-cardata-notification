@@ -1,0 +1,11 @@
+[Unit]
+Description=Delete logs older than 7 days (system journal and old syslog files)
+
+[Service]
+Type=oneshot
+# Close the active journal file. Then the next step can also delete its old entries one day later.
+ExecStart=/usr/bin/journalctl --rotate
+# Delete the journal files that have no entry from the last 7 days.
+ExecStart=/usr/bin/journalctl --vacuum-time=7d
+# Delete the old rotated copies of the log in /var/log/syslog.* that did not change for 7 days.
+ExecStart=/usr/bin/find /var/log -maxdepth 1 -type f -name 'syslog.*' -mtime +7 -delete

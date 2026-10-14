@@ -7,6 +7,7 @@
 # What it does:
 # - Installs Node (a fixed version, checked against the SHA-256 value in this file).
 # - Adds a 1 GB swap file on a small server without swap.
+# - Installs a nightly clean-up of old logs: a systemd timer at 05:00 server time. The journal keeps 7 days.
 # - Creates the miniwatch user.
 # - Installs the code as a new release in /opt/mini-watch/releases. The code belongs to root.
 #   The service can read it but cannot change it.
@@ -130,6 +131,12 @@ if [ -z "$(swapon --noheadings --show 2>/dev/null)" ] && [ "$MEM_KB" -lt 2000000
   sysctl -q -p /etc/sysctl.d/99-mini-watch-swap.conf
   echo "Added a 1 GB swap file (/swapfile)."
 fi
+
+# A nightly clean-up of old logs. The two files do not depend on a release. A new run of this script replaces them.
+install -o root -g root -m 644 "$REPO/deploy/mini-watch-log-clean.service" "$REPO/deploy/mini-watch-log-clean.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl --quiet enable --now mini-watch-log-clean.timer
+echo "Log clean-up: every night at 05:00 (server time), the journal keeps 7 days."
 
 id miniwatch >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbin/nologin miniwatch
 WAS_ACTIVE=0
