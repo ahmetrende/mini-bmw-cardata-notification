@@ -41,6 +41,28 @@ curl -d "Deneme bildirimi" https://ntfy.sh/TOPIC
 
 Telefonuna bildirim düşmeli. Düşmezse telefon ayarlarında ntfy için bildirimlerin açık olduğunu kontrol et.
 
+## Birden fazla telefon
+
+Bildirimler birden fazla telefona gelebilir. Örneğin bir aile üyesinin telefonuna. Program değişmez. Her telefon aynı konuya abone olur.
+
+1. Konu adını diğer kişiye ver. Özel bir yol kullan, örneğin bir mesaj uygulaması. Adı herkese açık bir yerde paylaşma.
+2. Diğer kişi **ntfy** uygulamasını kurar ve aynı konuya abone olur (yukarıdaki 2. bölüme bak). Sunucu, senin telefonundakiyle aynı olmalı (varsayılan `ntfy.sh`).
+3. Sunucuda bu denemeyi çalıştır:
+
+```bash
+sudo mini-watch ntfy-test
+```
+
+4. Her telefonda deneme bildiriminin göründüğünü kontrol et.
+
+Notlar:
+
+- Her telefon aynı bildirimi alır. Tek bir telefon için dil, bekleme süresi veya filtre ayarlayamazsın. `config.json` ayarları tüm telefonlar için geçerlidir.
+- Her telefonun kendi bildirim ayarları vardır. Bir telefon bir bildirimi kaçırırken diğeri alabilir.
+- Program, bildirimi hangi telefonun aldığını bilmez. ntfy teslim onayı vermez.
+- Konu adını bilen herkes bildirimleri okuyabilir. Adı bilen herkes konuya sahte bildirim de yollayabilir.
+- Bir kişiyi çıkarmak için yeni bir konu adı üret (1. bölüm). Sonra `config.json` içindeki `ntfy_topic` alanını değiştir, `sudo systemctl restart mini-watch` komutunu çalıştır ve kalan telefonları yeni adla yeniden abone et.
+
 ## Telefon notları
 
 **iPhone.** Program iPhone ile test edildi. Uygulama izin isteyince bildirimlere izin ver.

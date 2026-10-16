@@ -66,6 +66,8 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 
 Tek bildirim, açık olan tüm parçaları sıralar. Aynı saate sahip parçalar saati paylaşır. Süreleri `config.json` dosyasından değiştirebilirsin.
 
+Bildirimler birden fazla telefona gelebilir. Her telefon aynı konuya abone olur. Bkz. [Birden fazla telefon](docs/tr/03-ntfy.md#birden-fazla-telefon).
+
 ## Sınırlar
 
 - **Kilit durumu her araçta yok.** Test edilen araç merkezi kilit bilgisini (`vehicle.cabin.door.status`) yolluyor. Program böylece aracı kilitlediğini ve aracın yolda olduğunu anlar. Bu bilgi yoksa yalnızca "park edildi ve açık" durumuna bakar.

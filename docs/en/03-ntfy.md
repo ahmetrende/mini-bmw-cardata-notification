@@ -41,6 +41,28 @@ curl -d "Test notification" https://ntfy.sh/TOPIC
 
 A notification must arrive on your phone. If it does not arrive, check that notifications are on for ntfy in the phone settings.
 
+## More than one phone
+
+More than one phone can get the notifications, for example the phone of a family member. The program does not change. Each phone subscribes to the same topic.
+
+1. Give the topic name to the other person. Use a private way, for example a message app. Do not post it in a public place.
+2. The other person installs the **ntfy** app and subscribes to the same topic (see part 2 above). The server is the same as on your phone (`ntfy.sh` by default).
+3. Run this test on the server:
+
+```bash
+sudo mini-watch ntfy-test
+```
+
+4. Check that every phone shows the test notification.
+
+Notes:
+
+- Each phone gets the same notification. You cannot set a language, a wait time or a filter for one phone. The settings in `config.json` apply to all phones.
+- Each phone has its own notification settings. One phone can miss a notification while the other phone gets it.
+- The program does not know which phone got a notification. ntfy gives no delivery confirmation.
+- Everyone who knows the topic name can read the notifications. Everyone who knows it can also send a false notification to the topic.
+- To remove a person, make a new topic name (part 1). Then change `ntfy_topic` in `config.json`, run `sudo systemctl restart mini-watch` and subscribe the phones that stay to the new name.
+
 ## Phone notes
 
 **iPhone.** The author tested the program with an iPhone. Allow notifications when the app asks.

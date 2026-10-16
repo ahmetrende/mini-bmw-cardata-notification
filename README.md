@@ -66,6 +66,8 @@ Found a problem, or do you need a new event? Open an issue in this repository.
 
 One notification lists all open parts. Parts with the same time share it. You change the wait times in `config.json`.
 
+More than one phone can get the notifications. Each phone subscribes to the same topic. See [More than one phone](docs/en/03-ntfy.md#more-than-one-phone).
+
 ## Limits
 
 - **Lock state only on some cars.** The tested car sends the central lock (`vehicle.cabin.door.status`). The program then knows when you lock the car and when the car drives. Without it, the program reacts to "parked and open" only.
