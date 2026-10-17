@@ -75,6 +75,8 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 | `vehicle.cabin.sunroof.overallStatus` | Cam tavanın genel durumu. Program yalnızca kaydeder. |
 | `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Batarya seviyesi (yüzde). `notify_battery` ayarı için. Elektrikli ve hibrit araçlarda. Denenmedi. Alternatif: `vehicle.drivetrain.batteryManagement.header`. |
 | `vehicle.drivetrain.electricEngine.kombiRemainingElectricRange` | Kalan elektrik menzili. `notify_battery` ayarı için. Denenmedi. Alternatifler: `vehicle.drivetrain.electricEngine.remainingElectricRange` ve `vehicle.drivetrain.lastRemainingRange`. |
+| `vehicle.drivetrain.electricEngine.charging.status` | Şarj durumu: `INITIALIZATION`, `CHARGINGACTIVE`, `CHARGINGPAUSED`, `CHARGINGENDED`, `CHARGINGERROR` veya `NOCHARGING`. `notify_battery` ayarı için. Test edilen araç yolluyor. |
+| `vehicle.body.chargingPort.status` | Fiş durumu: `CONNECTED` veya `DISCONNECTED`. `notify_battery` ayarı için. Test edilen araç yolluyor. |
 
 Portal, araç tipine uygun öznitelikleri gösterir. Akış ise yalnızca aracının desteklediklerini yollar. Eksik bir öznitelik hata vermez, ama o parça için bildirim çalışmaz.
 

@@ -1326,6 +1326,141 @@ test('details: a car without an odometer value shows what it has', async () => {
   assert.match(sent[0][1], /\(battery 80%\)$/);
 });
 
+// ---- Charging state at the end of a notification ----
+
+const CHARGING_PORT = 'vehicle.body.chargingPort.status';
+const CHARGING_STATUS = 'vehicle.drivetrain.electricEngine.charging.status';
+const CHARGE_ON = { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: 'CHARGINGACTIVE' };
+const CHARGE_CFG = { notify_trip: true, notify_battery: true, lock_confirm: true };
+// The first drive ends at minute 22, the car is locked at minute 24 with every part closed (a lock confirmation).
+const parkedTrip = (extra = []) => tripWith([[23.5, { [TILT]: 'CLOSED' }], ...extra]);
+
+test('charging: the state with the battery level after the drive length, instead of the battery and the range', async () => {
+  const sent = await simulate(parkedTrip([[23.6, CHARGE_ON]]), 0, 40, CHARGE_CFG);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0][1], /MINI locked: Everything is closed\. \(drive 20 min, charging 64%\)$/);
+});
+
+test('charging: without a drive since the last notification the charging state still shows (alone)', async () => {
+  const events = parkedTrip([
+    [23.6, CHARGE_ON],
+    [140, { [LOCK]: 'UNLOCKED' }], // 2 hours later: a door opens, the car locks again, no drive
+    [141, DOOR_OPEN],
+    [141.2, DOOR_CLOSED],
+    [142, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 200, CHARGE_CFG);
+  assert.equal(sent.length, 2);
+  assert.match(sent[0][1], /\(drive 20 min, charging 64%\)$/);
+  assert.match(sent[1][1], /MINI locked: Everything is closed\. \(charging 64%\)$/);
+});
+
+test('charging: the notification waits while the car prepares to charge, then shows the result', async () => {
+  const events = parkedTrip([
+    [23.6, { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: 'INITIALIZATION' }],
+    [24.2, { [CHARGING_STATUS]: 'CHARGINGACTIVE' }],
+  ]);
+  const sent = await simulate(events, 0, 40, CHARGE_CFG);
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0][0] > 24 && sent[0][0] <= 24.5, `after the status changed, not at the lock (minute ${sent[0][0]})`);
+  assert.match(sent[0][1], /\(drive 20 min, charging 64%\)$/);
+});
+
+test('charging: after 30 seconds the notification shows the status of that moment', async () => {
+  const events = parkedTrip([[23.6, { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: 'INITIALIZATION' }]]);
+  const sent = await simulate(events, 0, 40, CHARGE_CFG);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 24.5, '30 seconds after the lock');
+  assert.match(sent[0][1], /\(drive 20 min, charging is starting 64%\)$/);
+});
+
+test('charging: no wait without notify_battery or without a plug', async () => {
+  const events = parkedTrip([[23.6, { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: 'INITIALIZATION' }]]);
+  const off = await simulate(events, 0, 40, { ...CHARGE_CFG, notify_battery: false });
+  assert.equal(off[0][0], 24, 'at the lock');
+  assert.match(off[0][1], /\(drive 20 min\)$/);
+  const unplugged = parkedTrip([[23.6, { [CHARGING_PORT]: 'DISCONNECTED', [CHARGING_STATUS]: 'INITIALIZATION' }]]);
+  assert.equal((await simulate(unplugged, 0, 40, CHARGE_CFG))[0][0], 24);
+});
+
+test('charging: an alert "left open" waits for the result too', async () => {
+  const events = tripWith([
+    [23.6, { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: 'INITIALIZATION' }],
+    [24.2, { [CHARGING_STATUS]: 'CHARGINGACTIVE' }],
+  ]);
+  const sent = await simulate(events, 0, 40, CHARGE_CFG);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24 \(drive 20 min, charging 64%\)$/);
+});
+
+test('charging: plugged in without charging shows, a car that is not plugged in shows nothing', async () => {
+  const idle = await simulate(parkedTrip([[23.6, { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: 'NOCHARGING' }]]), 0, 40, CHARGE_CFG);
+  assert.match(idle[0][1], /\(drive 20 min, plugged in but not charging 64%\)$/);
+  const away = await simulate(
+    parkedTrip([[23.6, { [CHARGING_PORT]: 'DISCONNECTED', [CHARGING_STATUS]: 'NOCHARGING' }]]),
+    0,
+    40,
+    { ...CHARGE_CFG, notify_battery_below_pct: 30 },
+  );
+  assert.match(away[0][1], /\(drive 20 min\)$/, 'no plug: the battery rule of the level applies (64% is not below 30%)');
+});
+
+test('charging: the level limit does not apply while charging, and a low level shows without the range', async () => {
+  const events = lockedTrip([
+    [7, { [SOC]: 25, [RANGE_KOMBI]: 80 }],
+    [23.5, { [TILT]: 'CLOSED' }],
+    [23.6, CHARGE_ON],
+  ]);
+  const sent = await simulate(events, 0, 40, { ...CHARGE_CFG, notify_battery_below_pct: 30 });
+  assert.match(sent[0][1], /\(drive 20 min, charging 25%\)$/);
+  const high = await simulate(parkedTrip([[23.6, CHARGE_ON]]), 0, 40, { ...CHARGE_CFG, notify_battery_below_pct: 30 });
+  assert.match(high[0][1], /\(drive 20 min, charging 64%\)$/, 'charging 64% shows although the limit is 30%');
+});
+
+test('charging: without a battery level only the state shows, and the other states', async () => {
+  const noLevel = await simulate(lockedTrip([[23.5, { [TILT]: 'CLOSED' }], [23.6, CHARGE_ON]]), 0, 40, CHARGE_CFG);
+  assert.match(noLevel[0][1], /\(drive 20 min, charging\)$/);
+  for (const [status, text] of [
+    ['CHARGINGPAUSED', 'charging paused'],
+    ['CHARGINGENDED', 'charging ended'],
+    ['CHARGINGERROR', 'charging error'],
+  ]) {
+    const sent = await simulate(parkedTrip([[23.6, { [CHARGING_PORT]: 'CONNECTED', [CHARGING_STATUS]: status }]]), 0, 40, CHARGE_CFG);
+    assert.match(sent[0][1], new RegExp(`\\(drive 20 min, ${text} 64%\\)$`), status);
+  }
+});
+
+test('charging: Turkish texts', async () => {
+  const cfg = { ...CHARGE_CFG, language: 'tr' };
+  const active = await simulate(parkedTrip([[23.6, CHARGE_ON]]), 0, 40, cfg);
+  assert.match(active[0][1], /\(sürüş 20 dk, şarj oluyor %64\)$/);
+  const texts = textsFor('tr').charge;
+  assert.deepEqual(texts, {
+    active: 'şarj oluyor',
+    starting: 'şarj başlatılıyor',
+    paused: 'şarj duraklatıldı',
+    ended: 'şarj tamamlandı',
+    error: 'şarj hatası',
+    idle: 'fiş takılı ama şarj olmuyor',
+  });
+});
+
+test('charging: off without notify_battery', async () => {
+  const sent = await simulate(parkedTrip([[23.6, CHARGE_ON]]), 0, 40, { ...CHARGE_CFG, notify_battery: false });
+  assert.match(sent[0][1], /\(drive 20 min\)$/);
+});
+
+test('charging: the state keeps the plug and the charging status for a restart', () => {
+  const { watcher, at } = virtualWatcher(DETAILS);
+  watcher.onData(msg({ [SOC]: 71, ...CHARGE_ON }), at(5));
+  const snap = JSON.parse(JSON.stringify(watcher.snapshot()));
+  const restored = virtualWatcher(DETAILS);
+  restored.at(10);
+  restored.watcher.restoreWatch(snap);
+  assert.equal(restored.watcher.chargeKind(), 'active');
+  assert.equal(restored.watcher.detailsText(textsFor('en')), ' (charging 71%)');
+});
+
 test('details: a state from an older version (no lastSentAt) shows no details for the old drive', () => {
   const { watcher, at } = virtualWatcher(DETAILS);
   watcher.onData(msg({ [KM]: 100, [LOCK]: 'LOCKED' }), at(2));

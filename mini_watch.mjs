@@ -109,6 +109,13 @@ const RANGE_ATTRS = [
   'vehicle.drivetrain.lastRemainingRange',
 ];
 const MILE_IN_KM = 1.609344;
+// Charging. The plug (CONNECTED / DISCONNECTED) and the charging status of the car.
+const CHARGING_PORT = 'vehicle.body.chargingPort.status';
+const CHARGING_STATUS = 'vehicle.drivetrain.electricEngine.charging.status';
+const CHARGE_KINDS = { CHARGINGACTIVE: 'active', INITIALIZATION: 'starting', CHARGINGPAUSED: 'paused', CHARGINGENDED: 'ended', CHARGINGERROR: 'error' };
+// While the car prepares to charge (plug connected, status INITIALIZATION), a notification with details waits for the
+// result. At most this long from the first time it was due. Then it shows the status of that moment.
+const CHARGE_WAIT_S = 30;
 
 // Text that the user sees on the phone. Log lines are always in English.
 const TEXT = {
@@ -138,6 +145,15 @@ const TEXT = {
     duration: (hours, minutes) => (hours ? `${hours} h ${minutes} min` : `${minutes} min`),
     battery: (percent) => `battery ${percent}%`,
     range: (km) => `range ${km} km`,
+    percentOf: (percent) => `${percent}%`,
+    charge: {
+      active: 'charging',
+      starting: 'charging is starting',
+      paused: 'charging paused',
+      ended: 'charging ended',
+      error: 'charging error',
+      idle: 'plugged in but not charging',
+    },
     silenceTitle: 'MINI no data',
     silenceBody: (hours) => `No data from the car for ${hours} hours. Check the server and the CarData portal.`,
     testTitle: 'MINI test',
@@ -169,6 +185,15 @@ const TEXT = {
     duration: (hours, minutes) => (hours ? `${hours} sa ${minutes} dk` : `${minutes} dk`),
     battery: (percent) => `batarya %${percent}`,
     range: (km) => `menzil ${km} km`,
+    percentOf: (percent) => `%${percent}`,
+    charge: {
+      active: 'şarj oluyor',
+      starting: 'şarj başlatılıyor',
+      paused: 'şarj duraklatıldı',
+      ended: 'şarj tamamlandı',
+      error: 'şarj hatası',
+      idle: 'fiş takılı ama şarj olmuyor',
+    },
     silenceTitle: 'MINI veri yok',
     silenceBody: (hours) => `Araçtan ${hours} saattir veri gelmiyor. Sunucuyu ve CarData portalını kontrol et.`,
     testTitle: 'MINI deneme',
@@ -594,6 +619,9 @@ export class Watcher {
     this.returnedAt = 0; // someone came back to the car after a notification (0 after a drive)
     this.doorOpen = new Map(); // door attribute -> last value. The car repeats an open door in each message.
     this.lockStatus = null; // the last value of vehicle.cabin.door.status, or null
+    this.chargingStatus = null; // the last value of the charging status (for example CHARGINGACTIVE), or null
+    this.plugStatus = null; // the last value of the plug (CONNECTED / DISCONNECTED), or null
+    this.chargeWaitSince = 0; // the time a notification first waited for the end of the charging preparation, 0 = no wait
     this.lockChangedAt = 0;
     this.driveEndAt = 0; // time the lock left LOCKED (the car unlocks itself when you park)
     this.lockedSince = 0; // time the lock last changed to LOCKED
@@ -655,6 +683,8 @@ export class Watcher {
       readings: [...this.readings],
       returnedAt: this.returnedAt,
       lockStatus: this.lockStatus,
+      chargingStatus: this.chargingStatus,
+      plugStatus: this.plugStatus,
       lockChangedAt: this.lockChangedAt,
       driveEndAt: this.driveEndAt,
       parkLockAt: this.parkLockAt,
@@ -688,6 +718,8 @@ export class Watcher {
     this.readings = new Map(snap.readings ?? []);
     this.returnedAt = snap.returnedAt ?? 0;
     this.lockStatus = snap.lockStatus ?? null;
+    this.chargingStatus = snap.chargingStatus ?? null;
+    this.plugStatus = snap.plugStatus ?? null;
     this.lockChangedAt = snap.lockChangedAt ?? 0;
     this.driveEndAt = snap.driveEndAt ?? 0;
     this.parkLockAt = snap.parkLockAt ?? 0;
@@ -769,25 +801,51 @@ export class Watcher {
   // " (drive 23 min, battery 64%, range 187 km)" at the end of a notification. Not for a reminder. Only what the settings ask for
   // and what the program knows. An empty text when nothing is known. With notify_battery_below_pct under 100, the battery level
   // and the range show only when the level is known and below that percent.
-  // The details belong to a drive: they show only when the odometer rose since the last notification. A car
-  // without any odometer value shows what it has.
+  // The drive length, the battery level and the range belong to a drive: they show only when the odometer rose since the last
+  // notification. A car without any odometer value shows what it has.
+  // The charging state (notify_battery) is the state of the car now. It shows always, with the battery level, and it replaces
+  // the battery level and the range.
   detailsText(t) {
-    if (this.lastKm !== null && this.kmChangedAt <= this.lastSentAt) return '';
+    const afterDrive = this.lastKm === null || this.kmChangedAt > this.lastSentAt;
     const parts = [];
-    if (this.cfg.notify_trip) {
+    if (afterDrive && this.cfg.notify_trip) {
       const minutes = Math.round(this.tripSeconds() / 60);
       if (minutes > 0) parts.push(t.trip(t.duration(Math.floor(minutes / 60), minutes % 60)));
     }
     if (this.cfg.notify_battery) {
       const percent = this.batteryPercent();
-      const limit = this.cfg.notify_battery_below_pct;
-      if (limit >= 100 || (percent !== null && percent < limit)) {
-        if (percent !== null) parts.push(t.battery(percent));
-        const km = this.rangeKm();
-        if (km !== null) parts.push(t.range(km));
+      const charge = this.chargeKind();
+      if (charge) {
+        parts.push(t.charge[charge] + (percent !== null ? ` ${t.percentOf(percent)}` : ''));
+      } else if (afterDrive) {
+        const limit = this.cfg.notify_battery_below_pct;
+        if (limit >= 100 || (percent !== null && percent < limit)) {
+          if (percent !== null) parts.push(t.battery(percent));
+          const km = this.rangeKm();
+          if (km !== null) parts.push(t.range(km));
+        }
       }
     }
     return parts.length ? ` (${parts.join(', ')})` : '';
+  }
+
+  // What the car does about charging: 'active', 'starting', 'paused', 'ended', 'error', 'idle' (the plug is connected and the
+  // car does not charge), or null (not plugged in, or not known).
+  chargeKind() {
+    const kind = CHARGE_KINDS[this.chargingStatus];
+    if (kind) return kind;
+    return this.plugStatus === 'CONNECTED' && this.chargingStatus === 'NOCHARGING' ? 'idle' : null;
+  }
+
+  // True while a notification with details must wait: the plug is connected and the car prepares to charge. The wait ends when
+  // the status changes, or CHARGE_WAIT_S after the first time the notification was due.
+  holdForCharge() {
+    if (!this.cfg.notify_battery || this.plugStatus !== 'CONNECTED' || this.chargingStatus !== 'INITIALIZATION') {
+      this.chargeWaitSince = 0;
+      return false;
+    }
+    if (!this.chargeWaitSince) this.chargeWaitSince = this.clock();
+    return this.clock() - this.chargeWaitSince < CHARGE_WAIT_S;
   }
 
   // "at" is the time of the message. A replay at startup passes the original time.
@@ -847,6 +905,14 @@ export class Watcher {
           if (!this.parkDoorAt) this.parkDoorAt = at;
         }
       }
+      if (name === CHARGING_STATUS || name === CHARGING_PORT) {
+        const value = String(item?.value ?? '').toUpperCase();
+        if (value) {
+          if (name === CHARGING_STATUS) this.chargingStatus = value;
+          else this.plugStatus = value;
+        }
+        continue;
+      }
       if (PERCENT_ATTRS.includes(name) || RANGE_ATTRS.includes(name)) {
         const number = Number(item?.value);
         if (Number.isFinite(number)) this.readings.set(name, { value: number, unit: String(item?.unit ?? '') });
@@ -880,6 +946,7 @@ export class Watcher {
       this.notifyFailures = 0;
       this.retryAt = 0;
       this.urgent = true;
+      this.chargeWaitSince = 0;
       return true;
     }
     const base = Math.min(NOTIFY_RETRY_MIN_S * 2 ** this.notifyFailures, NOTIFY_RETRY_MAX_S);
@@ -906,6 +973,7 @@ export class Watcher {
       this.confirmedAt = now; // This lock is handled. A later lock without a door must not count the old door openings.
       return;
     }
+    if (this.holdForCharge()) return; // The next check asks again.
     const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;
@@ -948,6 +1016,7 @@ export class Watcher {
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {
         if (this.clock() - this.allClosedSince < CLOSED_SETTLE_S) return; // A door may open next. The next check asks again.
+        if (this.holdForCharge()) return;
         const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'));
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
@@ -967,6 +1036,7 @@ export class Watcher {
     const nextReminder = this.cfg.remind_after_min[this.reminders];
     const remind = nextReminder !== undefined && this.clock() - this.firstNotifyAt >= nextReminder * 60;
     if (added || remind) {
+      if (added && this.holdForCharge()) return;
       // The oldest open part comes first. Each part shows the time the program first saw it open,
       // or the start of this park if the part was already open before it (open during the drive or
       // since an earlier day). The start of the park is the first lock after the drive (see parkBegin).
@@ -1021,7 +1091,9 @@ export class Fleet {
   // While a "closed" message waits for its settle time, check more often. The message then comes
   // about 15 to 20 seconds after the last part closed (a check every 15 seconds would give 15 to 30).
   nextCheckDelayMs() {
-    const pending = [...this.watchers.values()].some((watcher) => watcher.alerted && watcher.sawClose && watcher.openSince.size === 0);
+    const pending = [...this.watchers.values()].some(
+      (watcher) => (watcher.alerted && watcher.sawClose && watcher.openSince.size === 0) || watcher.chargeWaitSince > 0,
+    );
     return pending ? 5_000 : 15_000;
   }
 

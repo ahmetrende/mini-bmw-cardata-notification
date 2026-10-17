@@ -75,6 +75,8 @@ Do **not** press **Authenticate device** now. You use that button in Step 3, aft
 | `vehicle.cabin.sunroof.overallStatus` | General sunroof state. The program only records it. |
 | `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Battery level in percent. For the setting `notify_battery`. Electric and hybrid cars. Not tested. Alternative: `vehicle.drivetrain.batteryManagement.header`. |
 | `vehicle.drivetrain.electricEngine.kombiRemainingElectricRange` | Remaining electric range. For the setting `notify_battery`. Not tested. Alternatives: `vehicle.drivetrain.electricEngine.remainingElectricRange` and `vehicle.drivetrain.lastRemainingRange`. |
+| `vehicle.drivetrain.electricEngine.charging.status` | Charging state: `INITIALIZATION`, `CHARGINGACTIVE`, `CHARGINGPAUSED`, `CHARGINGENDED`, `CHARGINGERROR` or `NOCHARGING`. For the setting `notify_battery`. The tested car sends it. |
+| `vehicle.body.chargingPort.status` | Plug state: `CONNECTED` or `DISCONNECTED`. For the setting `notify_battery`. The tested car sends it. |
 
 The portal shows the attributes that exist for your car type. The stream sends only the attributes that your car supports. A missing attribute does not cause an error. The notification for that part does not work.
 
