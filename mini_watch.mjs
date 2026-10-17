@@ -725,7 +725,8 @@ export class Watcher {
   }
 
   // The first odometer value of a drive. The drive started when the lock became LOCKED (the car locks itself).
-  // A stop shorter than TRIP_GAP_S after the last unlock belongs to the same drive.
+  // A stop shorter than TRIP_GAP_S after the last unlock belongs to the same drive, unless a notification
+  // went out during the stop (the first drive was announced already).
   startTrip() {
     // The car still moves after the lock left LOCKED (for example a stop with SELECTIVELOCKED): the drive goes on.
     if (!this.tripActive && this.tripStartAt && this.tripEndAt && this.lockStatus !== 'LOCKED' && this.kmChangedAt - this.tripEndAt <= TRIP_GAP_S) {
@@ -735,7 +736,9 @@ export class Watcher {
     if (this.tripActive || this.lockStatus !== 'LOCKED' || !this.lockedSince) return;
     if (this.kmChangedAt - this.lockedSince > TRIP_START_WINDOW_S) return;
     this.tripActive = true;
-    const sameTrip = this.tripStartAt && this.tripEndAt && this.lockedSince - this.tripEndAt <= TRIP_GAP_S;
+    // A notification after the end of the last drive announced it. The next drive is a new one.
+    const announced = this.lastSentAt > this.tripEndAt;
+    const sameTrip = this.tripStartAt && this.tripEndAt && !announced && this.lockedSince - this.tripEndAt <= TRIP_GAP_S;
     if (!sameTrip) this.tripStartAt = this.lockedSince;
   }
 

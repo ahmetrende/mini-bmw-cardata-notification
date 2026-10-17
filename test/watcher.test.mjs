@@ -1412,6 +1412,34 @@ test('details: a stop shorter than 10 minutes belongs to the same drive, a longe
   assert.match(long[0][1], /\(drive 14 min\)$/, 'only the last leg');
 });
 
+test('details: a drive after a notification is a new drive, also after a stop shorter than 10 minutes', async () => {
+  const events = [
+    [0, { [KM]: 100, [LOCK]: 'SECURED' }],
+    [1, { [LOCK]: 'UNLOCKED' }],
+    [1.5, DOOR_OPEN],
+    [1.8, DOOR_CLOSED],
+    [2, { [LOCK]: 'LOCKED' }],
+    ...drive(6, 21, 101),
+    [22, { [LOCK]: 'UNLOCKED' }], // the first drive: 20 minutes
+    [23, DOOR_OPEN],
+    [23.2, DOOR_CLOSED],
+    [24, { [LOCK]: 'SECURED' }], // the notification of the first drive
+    [26, { [LOCK]: 'UNLOCKED' }], // a stop of 5 minutes (a cash machine)
+    [26.5, DOOR_OPEN],
+    [26.7, DOOR_CLOSED],
+    [27, { [LOCK]: 'LOCKED' }],
+    ...drive(30, 36, 300),
+    [37, { [LOCK]: 'UNLOCKED' }], // the second drive: 10 minutes
+    [38, DOOR_OPEN],
+    [38.2, DOOR_CLOSED],
+    [39, { [LOCK]: 'SECURED' }],
+  ];
+  const sent = await simulate(events, 0, 80, { notify_trip: true, lock_confirm: true });
+  assert.equal(sent.length, 2);
+  assert.match(sent[0][1], /\(drive 20 min\)$/);
+  assert.match(sent[1][1], /\(drive 10 min\)$/, 'not 35 minutes: the first drive was announced already');
+});
+
 test('details: the lock after parking (LOCKED, then SECURED) does not change the drive length', async () => {
   const events = tripWith([
     [23.2, { [LOCK]: 'LOCKED' }], // the car locks itself when you walk away
