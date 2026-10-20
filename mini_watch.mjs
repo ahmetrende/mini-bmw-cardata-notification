@@ -1012,6 +1012,13 @@ export class Watcher {
       this.urgent = true;
     }
     if (this.openSince.size === 0) {
+      // Someone came back to the car: a door opened after the "left open" notification. That person knows that the part is
+      // closed. With lock_confirm, the next lock says "everything is closed", so this message is not needed.
+      // The notification memory ends here without a message. A part that closed without a door (comfort close) still gets it.
+      if (this.alerted && this.sawClose && this.cfg.lock_confirm && this.lastDoorAt > this.firstNotifyAt) {
+        this.alerted = false;
+        this.sawClose = false;
+      }
       // Send "everything is closed" only after the program saw a part close.
       // After a restart, an empty list can mean "no data yet", not "closed".
       if (this.alerted && this.sawClose) {

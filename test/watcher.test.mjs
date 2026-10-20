@@ -1277,6 +1277,58 @@ test('details: "everything is closed" has them when the car drove since the aler
   assert.match(sent[1][1], /MINI: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
 });
 
+// ---- No "everything is closed" when you came back to the car (with lock_confirm) ----
+
+// An alert at minute 24 (the sunroof is open when the car locks). Then somebody opens a door and closes the sunroof.
+// (Before minute 54: the first reminder is due 30 minutes after the alert.)
+const returnAndClose = (closeAt = 42) => [
+  [40, { [LOCK]: 'UNLOCKED' }],
+  [41, DOOR_OPEN],
+  [41.2, DOOR_CLOSED],
+  [closeAt, { [TILT]: 'CLOSED' }],
+];
+
+test('closed: a door opened after the alert, then the part closes: no "everything is closed" with lock_confirm', async () => {
+  const events = tripWith([...returnAndClose(42), [46, { [LOCK]: 'SECURED' }]]);
+  const sent = await simulate(events, 0, 120, { lock_confirm: true });
+  assert.equal(sent.length, 2, sent.map(([, text]) => text).join(' | '));
+  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
+  assert.match(sent[1][1], /MINI locked: Everything is closed\.$/, 'the lock says it');
+});
+
+test('closed: without lock_confirm the message "everything is closed" stays', async () => {
+  const events = tripWith([...returnAndClose(42), [46, { [LOCK]: 'SECURED' }]]);
+  const sent = await simulate(events, 0, 120);
+  assert.equal(sent.length, 2);
+  assert.match(sent[1][1], /MINI: Everything is closed\.$/);
+});
+
+test('closed: no door opened after the alert (comfort close, a part that closes alone): the message stays', async () => {
+  const events = tripWith([[40, { [TILT]: 'CLOSED' }]]);
+  const sent = await simulate(events, 0, 80, { lock_confirm: true });
+  assert.equal(sent.length, 2);
+  assert.match(sent[1][1], /MINI: Everything is closed\.$/);
+});
+
+test('closed: a part that closes during the next drive gives the lock confirmation at the park, not "everything is closed"', async () => {
+  const events = tripWith([
+    [30, { [LOCK]: 'UNLOCKED' }], // back at the car, the sunroof is still open
+    [31, DOOR_OPEN],
+    [31.2, DOOR_CLOSED],
+    [36, { [LOCK]: 'LOCKED' }],
+    ...drive(39, 52, 130),
+    [48, { [TILT]: 'CLOSED' }], // the sunroof closes during the drive
+    [56, { [LOCK]: 'UNLOCKED' }],
+    [57, DOOR_OPEN],
+    [57.2, DOOR_CLOSED],
+    [58, { [LOCK]: 'SECURED' }],
+  ]);
+  const sent = await simulate(events, 0, 100, { ...DETAILS, lock_confirm: true });
+  assert.equal(sent.length, 2, sent.map(([, text]) => text).join(' | '));
+  assert.match(sent[0][1], /MINI left open: /);
+  assert.match(sent[1][1], /MINI locked: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
 test('details: no drive since the last notification, no details (opening the doors and locking again)', async () => {
   const events = tripWith([
     [23.5, { [TILT]: 'CLOSED' }],
