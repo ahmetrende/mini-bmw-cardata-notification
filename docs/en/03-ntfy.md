@@ -63,6 +63,20 @@ Notes:
 - Everyone who knows the topic name can read the notifications. Everyone who knows it can also send a false notification to the topic.
 - To remove a person, make a new topic name (part 1). Then change `ntfy_topic` in `config.json`, run `sudo systemctl restart mini-watch` and subscribe the phones that stay to the new name.
 
+## New phone
+
+A new phone needs no change on the server. The notifications go to the topic, not to one phone.
+
+1. Find your topic name. Run this command on the server:
+
+```bash
+sudo grep ntfy_topic /var/lib/mini-watch/config.json
+```
+
+2. Install the **ntfy** app on the new phone and subscribe to the same topic (see part 2 above). The subscriptions can be missing after a phone change. Subscribe again.
+3. Run `sudo mini-watch ntfy-test` on the server. The new phone must show the test notification.
+4. Delete the subscription in the ntfy app of the old phone. If you lose or give away the old phone, make a new topic name instead (see the last note in "More than one phone").
+
 ## Phone notes
 
 **iPhone.** The author tested the program with an iPhone. Allow notifications when the app asks.

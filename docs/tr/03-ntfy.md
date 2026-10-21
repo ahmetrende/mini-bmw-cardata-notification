@@ -63,6 +63,20 @@ Notlar:
 - Konu adını bilen herkes bildirimleri okuyabilir. Adı bilen herkes konuya sahte bildirim de yollayabilir.
 - Bir kişiyi çıkarmak için yeni bir konu adı üret (1. bölüm). Sonra `config.json` içindeki `ntfy_topic` alanını değiştir, `sudo systemctl restart mini-watch` komutunu çalıştır ve kalan telefonları yeni adla yeniden abone et.
 
+## Yeni telefon
+
+Yeni bir telefon için sunucuda bir şey değiştirmen gerekmez. Bildirimler tek bir telefona değil, konuya gider.
+
+1. Konu adını bul. Sunucuda bu komutu çalıştır:
+
+```bash
+sudo grep ntfy_topic /var/lib/mini-watch/config.json
+```
+
+2. Yeni telefona **ntfy** uygulamasını kur ve aynı konuya abone ol (yukarıdaki 2. bölüme bak). Telefon değişince abonelikler eksik olabilir. Yeniden abone ol.
+3. Sunucuda `sudo mini-watch ntfy-test` komutunu çalıştır. Yeni telefonda deneme bildirimi görünmeli.
+4. Eski telefondaki ntfy uygulamasında aboneliği sil. Eski telefonu kaybedersen ya da başkasına verirsen bunun yerine yeni bir konu adı üret ("Birden fazla telefon" bölümünün son notuna bak).
+
 ## Telefon notları
 
 **iPhone.** Program iPhone ile test edildi. Uygulama izin isteyince bildirimlere izin ver.
