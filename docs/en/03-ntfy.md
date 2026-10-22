@@ -94,7 +94,7 @@ Menu names can change between app versions. If a notification is late on Android
 ## Security
 
 - Notifications are not end-to-end encrypted. The ntfy.sh server can read the text.
-- The text only names the open parts and the time, for example "Open: front right window since 13:50". It has no location, plate number or VIN.
+- The text only names the open parts and the time, for example "Front right window since 13:50". It has no location, plate number or VIN.
 - For more privacy, run your own ntfy server. Then set `ntfy_server` in `config.json`.
 
 **Next step:** Go to [Step 3, the server setup](04-server-setup.md).

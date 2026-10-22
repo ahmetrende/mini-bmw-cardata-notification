@@ -132,11 +132,16 @@ const TEXT = {
     sunroofTilt: 'sunroof (tilted)',
     trunk: 'trunk',
     hood: 'hood',
-    openTitle: 'MINI left open',
-    stillOpenTitle: 'MINI still open',
+    // The title tells the lock state: locked, known but not locked, or no lock data.
+    openTitle: { locked: 'MINI locked, but a part is open', unlocked: 'MINI not locked, a part is open', unknown: 'MINI: a part is open' },
+    stillOpenTitle: {
+      locked: 'MINI locked, but a part is still open',
+      unlocked: 'MINI not locked, a part is still open',
+      unknown: 'MINI: a part is still open',
+    },
     since: (time) => `since ${time}`,
     and: 'and',
-    openBody: (items) => `Open: ${items}`,
+    openBody: (items) => upperFirst(items, 'en'),
     closedTitle: 'MINI',
     closedBody: 'Everything is closed.',
     lockedTitle: 'MINI locked',
@@ -172,11 +177,15 @@ const TEXT = {
     sunroofTilt: 'cam tavan (aralık)',
     trunk: 'bagaj',
     hood: 'kaput',
-    openTitle: 'MINI açık kaldı',
-    stillOpenTitle: 'MINI hâlâ açık',
+    openTitle: { locked: 'MINI kilitlendi ama açık parça var', unlocked: 'MINI kilitli değil, açık parça var', unknown: "MINI'de açık parça var" },
+    stillOpenTitle: {
+      locked: 'MINI kilitli ama hala açık parça var',
+      unlocked: 'MINI kilitli değil, hala açık parça var',
+      unknown: "MINI'de hala açık parça var",
+    },
     since: (time) => `${time}'${turkishFromSuffix(time)} beri`,
     and: 've',
-    openBody: (items) => `Açık: ${items}`,
+    openBody: (items) => upperFirst(items, 'tr'),
     closedTitle: 'MINI',
     closedBody: 'Her şey kapandı.',
     lockedTitle: 'MINI kilitlendi',
@@ -194,9 +203,9 @@ const TEXT = {
       error: 'şarj hatası',
       idle: 'fiş takılı ama şarj olmuyor',
     },
-    silenceTitle: 'MINI veri yok',
+    silenceTitle: "MINI'den veri gelmiyor",
     silenceBody: (hours) => `Araçtan ${hours} saattir veri gelmiyor. Sunucuyu ve CarData portalını kontrol et.`,
-    testTitle: 'MINI deneme',
+    testTitle: 'MINI deneme bildirimi',
     testBody: 'Bildirim çalışıyor.',
   },
 };
@@ -206,6 +215,8 @@ export const textsFor = (language) => TEXT[language] ?? TEXT.en; // for the test
 const joinList = (items, word) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} ${word} ${items[items.length - 1]}`);
 // With more than one car, the title names the car: "MINI left open (Countryman)".
 const withName = (title, name) => (name ? `${title} (${name})` : title);
+// The first letter in upper case, with the rules of the language (Turkish: i becomes İ).
+const upperFirst = (text, language) => (text ? text.charAt(0).toLocaleUpperCase(language) + text.slice(1) : text);
 
 // Turkish adds -den, -dan, -ten or -tan to a time, for example "13:50'den". The suffix follows the
 // last spoken word of the time: the minute, or the hour when the minute is 00.
@@ -829,6 +840,13 @@ export class Watcher {
     return parts.length ? ` (${parts.join(', ')})` : '';
   }
 
+  // For the title of a notification about open parts: 'locked', 'unlocked' (the car sends the lock state and it is not locked),
+  // or 'unknown' (no lock data).
+  lockKind() {
+    if (this.lockStatus === null) return 'unknown';
+    return this.lockStatus === 'SECURED' || this.lockStatus === 'LOCKED' ? 'locked' : 'unlocked';
+  }
+
   // What the car does about charging: 'active', 'starting', 'paused', 'ended', 'error', 'idle' (the plug is connected and the
   // car does not charge), or null (not plugged in, or not known).
   chargeKind() {
@@ -1062,7 +1080,7 @@ export class Watcher {
         groups.set(when, [...(groups.get(when) ?? []), name]);
       }
       const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg)} ${when}`).join(', ');
-      const title = withName(added ? t.openTitle : t.stillOpenTitle, this.name());
+      const title = withName((added ? t.openTitle : t.stillOpenTitle)[this.lockKind()], this.name());
       const sent = await ntfy(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
       if (!this.notifyResult(sent)) return;
       this.alerted = true;

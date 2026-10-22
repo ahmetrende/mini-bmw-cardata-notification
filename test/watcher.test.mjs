@@ -83,7 +83,7 @@ test('no notification while driving, one combined notification after the driver 
   assert.equal(lines.length, 1, 'one combined notification');
   // The driver door is still open, so it is in the list too. Parts that were open during the drive
   // show the start of the park (the driver door at 00:15). The oldest open part still comes first.
-  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\), front right window and front left door since 00:15$/);
+  assert.match(lines[0], /MINI: a part is open: Sunroof \(tilted\), front right window and front left door since 00:15$/);
 });
 
 test('a new drive resets the notification memory', async () => {
@@ -159,7 +159,7 @@ test('Turkish text with language "tr"', async () => {
   watcher.onData(msg({ [WIN]: 'OPEN', [TILT]: 'OPEN' }), at(0));
   at(10);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /MINI açık kaldı: Açık: sağ ön cam ve cam tavan \(aralık\) 00:00'dan beri$/);
+  assert.match(lines[0], /MINI'de açık parça var: Sağ ön cam ve cam tavan \(aralık\) 00:00'dan beri$/);
 });
 
 test('label names the part in both languages', () => {
@@ -176,7 +176,7 @@ test('the notification names the time each part opened, oldest first', async () 
   watcher.onData(msg({ [WIN]: 'OPEN' }), at(13, 50));
   watcher.onData(msg({ [TILT]: 'OPEN' }), at(13, 48));
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /MINI left open: Open: sunroof \(tilted\) since 6 Jan 13:48, front right window since 6 Jan 13:50/);
+  assert.match(lines[0], /MINI: a part is open: Sunroof \(tilted\) since 6 Jan 13:48, front right window since 6 Jan 13:50/);
 });
 
 test('Turkish notification has the time with the right suffix', async () => {
@@ -184,7 +184,7 @@ test('Turkish notification has the time with the right suffix', async () => {
   watcher.onData(msg({ [WIN]: 'OPEN' }), at(13, 50));
   watcher.onData(msg({ [TILT]: 'OPEN' }), at(13, 48));
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /cam tavan \(aralık\) .*13:48'den beri, sağ ön cam .*13:50'den beri/);
+  assert.match(lines[0], /Cam tavan \(aralık\) .*13:48'den beri, sağ ön cam .*13:50'den beri/);
 });
 
 test('formatTime shows only the time for today and a date for an earlier day', () => {
@@ -309,7 +309,7 @@ test('real park: one notification 10 minutes after the driver door opens', async
   const sent = await simulate(events, 0, 60);
   assert.equal(sent.length, 1);
   assert.equal(sent[0][0], 33);
-  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
+  assert.match(sent[0][1], /MINI: a part is open: Sunroof \(tilted\)/);
 });
 
 test('reminders 30 and 90 minutes after the first notification, then no more', async () => {
@@ -319,8 +319,8 @@ test('reminders 30 and 90 minutes after the first notification, then no more', a
     sent.map(([minute]) => minute),
     [11, 41, 101],
   );
-  assert.match(sent[0][1], /MINI left open/);
-  for (const [, text] of sent.slice(1)) assert.match(text, /MINI still open/);
+  assert.match(sent[0][1], /MINI: a part is open/);
+  for (const [, text] of sent.slice(1)) assert.match(text, /MINI: a part is still open/);
 });
 
 // ---- Failed notifications, unknown values, settings and history (static analysis findings F-01, F-03, F-04, F-06, F-13) ----
@@ -363,7 +363,7 @@ test('a failed notification is sent again later and the state waits for success'
     await watcher.check(); // HTTP 200
   });
   assert.equal(calls.length, 3);
-  assert.equal(calls[2].title, 'MINI left open', 'the retry is the first alert, not a reminder');
+  assert.equal(calls[2].title, 'MINI: a part is open', 'the retry is the first alert, not a reminder');
   assert.equal(watcher.alerted, true);
   assert.equal(watcher.notifyFailures, 0);
 });
@@ -395,7 +395,7 @@ test('"everything is closed" is sent again when it fails', async () => {
     clock += 31;
     await watcher.check(); // nothing more
   });
-  assert.deepEqual(calls.map((call) => call.title), ['MINI left open', 'MINI', 'MINI']);
+  assert.deepEqual(calls.map((call) => call.title), ['MINI: a part is open', 'MINI', 'MINI']);
   assert.equal(watcher.alerted, false);
 });
 
@@ -485,11 +485,11 @@ test('two cars: the parts do not mix and the title names the car', async () => {
   clock = 11 * 60;
   const lines = await logsDuring(() => fleet.check());
   assert.equal(lines.length, 1, 'car B drives: only car A sends');
-  assert.match(lines[0], /MINI left open \(Countryman\): Open: front right window/);
+  assert.match(lines[0], /MINI: a part is open \(Countryman\): Front right window/);
   clock = 40 * 60; // car B is parked now (car A's first reminder comes at 41)
   const later = await logsDuring(() => fleet.check());
   assert.equal(later.length, 1);
-  assert.match(later[0], /MINI left open \(…0002\): Open: sunroof \(tilted\)/);
+  assert.match(later[0], /MINI: a part is open \(…0002\): Sunroof \(tilted\)/);
 });
 
 test('a restart keeps a part that is open for more than 24 hours, without a new alert', async () => {
@@ -701,7 +701,7 @@ test('lock: a part that is open when you lock the car gives a notification at on
   assert.equal(sent.length, 1);
   assert.equal(sent[0][0], 24, 'at the lock (without the lock: 23 + 10 = 33)');
   // The sunroof was open since minute 1.8, during the drive. The text shows the lock time.
-  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24$/);
+  assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:24$/);
 });
 
 test('lock: with alert_after_lock_min 2, a comfort close after the lock gives no notification', async () => {
@@ -729,13 +729,13 @@ test('the text shows the start of the park for a part that was open since an ear
   ];
   const sent = await simulate(events, day - 1, day + 30, { remind_after_min: [] });
   assert.equal(sent.length, 2, 'the alert of yesterday, then the alert of today');
-  assert.match(sent[1][1], /MINI left open: Open: sunroof \(tilted\) since 00:23$/, 'not "since yesterday 00:00"');
+  assert.match(sent[1][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:23$/, 'not "since yesterday 00:00"');
 });
 
 test('the text keeps the own time of a part that opened after the park', async () => {
   const events = lockedTrip([[23.5, { [TILT]: 'CLOSED' }], [30, { [TRUNK]: true }]]);
   const sent = await simulate(events, 0, 60);
-  assert.match(sent[0][1], /trunk since 00:30$/);
+  assert.match(sent[0][1], /Trunk since 00:30$/);
 });
 
 test('lock: a part that opens after the lock follows the normal wait', async () => {
@@ -743,7 +743,7 @@ test('lock: a part that opens after the lock follows the normal wait', async () 
   const sent = await simulate(events, 0, 60);
   assert.equal(sent.length, 1);
   assert.equal(sent[0][0], 40, 'trunk opened at 30 + 10 minutes');
-  assert.match(sent[0][1], /trunk/);
+  assert.match(sent[0][1], /Trunk/);
 });
 
 test('lock: LOCKED while driving stops notifications, also without odometer data', async () => {
@@ -793,7 +793,7 @@ test('the text uses the time the driver got out when the lock comes hours later'
   ];
   const sent = await simulate(events, 0, 200, { remind_after_min: [] });
   assert.equal(sent.length, 1);
-  assert.match(sent[0][1], /sunroof \(tilted\) since 00:22$/);
+  assert.match(sent[0][1], /Sunroof \(tilted\) since 00:22$/);
 });
 
 test('reminders: a custom list, an empty list, and a new part starts a new series', async () => {
@@ -803,7 +803,7 @@ test('reminders: a custom list, an empty list, and a new part starts a new serie
   const withNewPart = [...base, [50, { [WIN]: 'OPEN' }]];
   const sent = await simulate(withNewPart, 0, 300);
   assert.deepEqual(sent.map(([m]) => m), [11, 41, 60, 90, 150], 'the window at 50: a new alert at 60, then 30 and 90 minutes after it');
-  assert.match(sent[2][1], /MINI left open/);
+  assert.match(sent[2][1], /MINI: a part is open/);
 });
 
 test('reminders after a restart from an older state count from the last notification', () => {
@@ -825,7 +825,7 @@ test('back at the car: unlocking stops the reminders, a new lock starts a new se
   ]);
   const sent = await simulate(events, 0, 300);
   assert.deepEqual(sent.map(([m]) => m), [24, 44, 74, 134]);
-  assert.match(sent[1][1], /MINI left open/, 'a new series, not a reminder');
+  assert.match(sent[1][1], /MINI locked, but a part is open/, 'a new series, not a reminder');
 });
 
 test('back at the car without a new lock: a new series after the normal wait', async () => {
@@ -860,7 +860,7 @@ test('a door that stays open counts once, also when the car repeats it in each m
   ];
   const sent = await simulate(events, 0, 60);
   assert.equal(sent[0][0], 11, 'not moved to 18 by the repeated value');
-  assert.match(sent[0][1], /front left door/);
+  assert.match(sent[0][1], /Front left door/);
   assert.deepEqual(sent.map(([m]) => m), [11, 41], 'the repeated value is no return to the car');
 });
 
@@ -927,8 +927,8 @@ test('closed after a drive: the sunroof closes during the drive, the message wai
 test('closed after a drive: a part that is still open gives a new "left open", not "closed"', async () => {
   const sent = await simulate(driveAfterAlert([]), 0, 120);
   assert.deepEqual(sent.map(([m]) => m), [11, 52, 82], 'a new series: 10 minutes after the park, then 30 minutes later');
-  assert.match(sent[1][1], /MINI left open/);
-  assert.match(sent[2][1], /MINI still open/);
+  assert.match(sent[1][1], /MINI: a part is open/);
+  assert.match(sent[2][1], /MINI: a part is still open/);
 });
 
 test('closed after a drive: an old alert does not give a wrong "closed" later', async () => {
@@ -972,7 +972,7 @@ test('parts with the same time are grouped, groups are separated by a comma', as
   watcher.onData(msg({ [WIN]: 'OPEN' }), t0 + 3600 + 20); // 20 seconds later: the same minute
   at(120);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /^\[ntfy off\] MINI left open: Open: sunroof \(tilted\) since 00:00, front left and rear right doors and front right window since 01:00$/);
+  assert.match(lines[0], /^\[ntfy off\] MINI: a part is open: Sunroof \(tilted\) since 00:00, front left and rear right doors and front right window since 01:00$/);
 });
 
 test('Turkish: parts with the same time are grouped with "ve"', async () => {
@@ -982,7 +982,7 @@ test('Turkish: parts with the same time are grouped with "ve"', async () => {
   watcher.onData(msg({ [DRIVER_DOOR]: true, [REAR_RIGHT_DOOR]: true }), t0 + 3600);
   at(120);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /Açık: cam tavan \(aralık\) 00:00'dan beri, sol ön ve sağ arka kapı 01:00'den beri$/);
+  assert.match(lines[0], /Cam tavan \(aralık\) 00:00'dan beri, sol ön ve sağ arka kapı 01:00'den beri$/);
 });
 
 test('a name shows once: the trunk has two attributes', async () => {
@@ -992,14 +992,14 @@ test('a name shows once: the trunk has two attributes', async () => {
   watcher.onData(msg({ [TRUNK_DOOR]: true }), t0 + 600);
   at(60);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /Open: trunk since 00:00$/);
+  assert.match(lines[0], /Trunk since 00:00$/);
 });
 
 test('one part: no list word', async () => {
   const { watcher, at } = virtualWatcher();
   watcher.onData(msg({ [TILT]: 'OPEN' }), at(0));
   at(20);
-  assert.match((await logsDuring(() => watcher.check()))[0], /Open: sunroof \(tilted\) since 00:00$/);
+  assert.match((await logsDuring(() => watcher.check()))[0], /Sunroof \(tilted\) since 00:00$/);
 });
 
 // ---- The windows and the doors of a group share their name ----
@@ -1046,7 +1046,7 @@ test('a notification: the two front windows and the driver door, one time', asyn
   watcher.onData(msg({ [W('row1', 'driver')]: 'OPEN', [W('row1', 'passenger')]: 'OPEN', [DRIVER_DOOR]: true }), t0);
   at(20);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /Açık: sol ve sağ ön cam ve sol ön kapı 00:00'dan beri$/);
+  assert.match(lines[0], /Sol ve sağ ön cam ve sol ön kapı 00:00'dan beri$/);
 });
 
 // ---- Lock confirmation (lock_confirm): "locked, everything is closed" ----
@@ -1074,7 +1074,7 @@ test('lock confirmation: off by default', async () => {
 test('lock confirmation: a part that is open at the lock gives "left open", not a confirmation', async () => {
   const sent = await simulate(lockedTrip(), 0, 40, CONFIRM);
   assert.deepEqual(sent.map(([m]) => m), [24]);
-  assert.match(sent[0][1], /MINI left open/);
+  assert.match(sent[0][1], /MINI locked, but a part is open/);
 });
 
 test('lock confirmation: unlock and lock without a door (a valet key) give nothing more', async () => {
@@ -1235,14 +1235,14 @@ const tripWith = (extra = []) => lockedTrip([[7, { [SOC]: 63.6, [RANGE_KOMBI]: {
 
 test('details: drive length, battery level and range after the text of an alert', async () => {
   const sent = await simulate(tripWith(), 0, 40, DETAILS);
-  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24 \(drive 20 min, battery 64%, range 187 km\)$/);
+  assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:24 \(drive 20 min, battery 64%, range 187 km\)$/);
 });
 
 test('details: the reminders have no details', async () => {
   const sent = await simulate(tripWith(), 0, 70, DETAILS);
   assert.deepEqual(sent.map(([m]) => m), [24, 54]);
   assert.match(sent[0][1], /\(drive 20 min, battery 64%, range 187 km\)$/);
-  assert.match(sent[1][1], /MINI still open: Open: sunroof \(tilted\) since 00:24$/);
+  assert.match(sent[1][1], /MINI locked, but a part is still open: Sunroof \(tilted\) since 00:24$/);
 });
 
 test('details: Turkish text', async () => {
@@ -1273,8 +1273,59 @@ test('details: "everything is closed" has them when the car drove since the aler
   ]);
   const sent = await simulate(events, 0, 100, DETAILS);
   assert.equal(sent.length, 2);
-  assert.match(sent[0][1], /MINI left open: .*\(drive 20 min, battery 64%, range 187 km\)$/);
+  assert.match(sent[0][1], /MINI locked, but a part is open: .*\(drive 20 min, battery 64%, range 187 km\)$/);
   assert.match(sent[1][1], /MINI: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
+});
+
+// ---- The title of an open-part notification tells the lock state ----
+
+// The car is parked and unlocked, the sunroof tilts. The alert comes 10 minutes after the driver door opened.
+const unlockedPark = (extra = []) => [
+  [0, { [KM]: 100, [LOCK]: 'UNLOCKED', [TILT]: 'OPEN' }],
+  [1, DOOR_OPEN],
+  [1.2, DOOR_CLOSED],
+  ...extra,
+];
+
+test('title: locked, not locked and no lock data, for the alert and the reminder', async () => {
+  const locked = await simulate(lockedTrip(), 0, 70);
+  assert.match(locked[0][1], /^\[ntfy off\] MINI locked, but a part is open: Sunroof \(tilted\) since 00:24$/);
+  assert.match(locked[1][1], /^\[ntfy off\] MINI locked, but a part is still open: Sunroof \(tilted\) since 00:24$/);
+  const unlocked = await simulate(unlockedPark(), 0, 70);
+  assert.match(unlocked[0][1], /^\[ntfy off\] MINI not locked, a part is open: Sunroof \(tilted\) since 00:00$/);
+  assert.match(unlocked[1][1], /^\[ntfy off\] MINI not locked, a part is still open: Sunroof \(tilted\) since 00:00$/);
+  const unknown = await simulate([[0, { [KM]: 100, [TILT]: 'OPEN' }], [1, DOOR_OPEN], [1.2, DOOR_CLOSED]], 0, 70);
+  assert.match(unknown[0][1], /^\[ntfy off\] MINI: a part is open: Sunroof \(tilted\) since 00:00$/);
+  assert.match(unknown[1][1], /^\[ntfy off\] MINI: a part is still open: Sunroof \(tilted\) since 00:00$/);
+});
+
+test('title: Turkish, with the body starting in upper case', async () => {
+  const tr = { language: 'tr' };
+  const locked = await simulate(lockedTrip(), 0, 70, tr);
+  assert.match(locked[0][1], /^\[ntfy off\] MINI kilitlendi ama açık parça var: Cam tavan \(aralık\) 00:24'ten beri$/);
+  assert.match(locked[1][1], /^\[ntfy off\] MINI kilitli ama hala açık parça var: Cam tavan \(aralık\) 00:24'ten beri$/);
+  const unlocked = await simulate(unlockedPark(), 0, 70, tr);
+  assert.match(unlocked[0][1], /^\[ntfy off\] MINI kilitli değil, açık parça var: Cam tavan \(aralık\) 00:00'dan beri$/);
+  assert.match(unlocked[1][1], /^\[ntfy off\] MINI kilitli değil, hala açık parça var: Cam tavan \(aralık\) 00:00'dan beri$/);
+  const unknown = await simulate([[0, { [KM]: 100, [TILT]: 'OPEN' }], [1, DOOR_OPEN], [1.2, DOOR_CLOSED]], 0, 70, tr);
+  assert.match(unknown[0][1], /^\[ntfy off\] MINI'de açık parça var: Cam tavan \(aralık\) 00:00'dan beri$/);
+  assert.match(unknown[1][1], /^\[ntfy off\] MINI'de hala açık parça var: Cam tavan \(aralık\) 00:00'dan beri$/);
+});
+
+test('title: the texts of every kind of notification', () => {
+  const en = textsFor('en');
+  const tr = textsFor('tr');
+  assert.deepEqual(en.openTitle, { locked: 'MINI locked, but a part is open', unlocked: 'MINI not locked, a part is open', unknown: 'MINI: a part is open' });
+  assert.deepEqual(tr.openTitle, { locked: 'MINI kilitlendi ama açık parça var', unlocked: 'MINI kilitli değil, açık parça var', unknown: "MINI'de açık parça var" });
+  assert.deepEqual(tr.stillOpenTitle, {
+    locked: 'MINI kilitli ama hala açık parça var',
+    unlocked: 'MINI kilitli değil, hala açık parça var',
+    unknown: "MINI'de hala açık parça var",
+  });
+  assert.equal(tr.silenceTitle, "MINI'den veri gelmiyor");
+  assert.equal(tr.testTitle, 'MINI deneme bildirimi');
+  assert.equal(tr.openBody('i kapı'), 'İ kapı', 'Turkish upper case: i becomes İ');
+  assert.equal(en.openBody('sunroof since 10:00'), 'Sunroof since 10:00');
 });
 
 // ---- No "everything is closed" when you came back to the car (with lock_confirm) ----
@@ -1292,7 +1343,7 @@ test('closed: a door opened after the alert, then the part closes: no "everythin
   const events = tripWith([...returnAndClose(42), [46, { [LOCK]: 'SECURED' }]]);
   const sent = await simulate(events, 0, 120, { lock_confirm: true });
   assert.equal(sent.length, 2, sent.map(([, text]) => text).join(' | '));
-  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\)/);
+  assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\)/);
   assert.match(sent[1][1], /MINI locked: Everything is closed\.$/, 'the lock says it');
 });
 
@@ -1325,7 +1376,7 @@ test('closed: a part that closes during the next drive gives the lock confirmati
   ]);
   const sent = await simulate(events, 0, 100, { ...DETAILS, lock_confirm: true });
   assert.equal(sent.length, 2, sent.map(([, text]) => text).join(' | '));
-  assert.match(sent[0][1], /MINI left open: /);
+  assert.match(sent[0][1], /MINI locked, but a part is open: /);
   assert.match(sent[1][1], /MINI locked: Everything is closed\. \(drive 20 min, battery 64%, range 187 km\)$/);
 });
 
@@ -1442,7 +1493,7 @@ test('charging: an alert "left open" waits for the result too', async () => {
   ]);
   const sent = await simulate(events, 0, 40, CHARGE_CFG);
   assert.equal(sent.length, 1);
-  assert.match(sent[0][1], /MINI left open: Open: sunroof \(tilted\) since 00:24 \(drive 20 min, charging 64%\)$/);
+  assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:24 \(drive 20 min, charging 64%\)$/);
 });
 
 test('charging: plugged in without charging shows, a car that is not plugged in shows nothing', async () => {

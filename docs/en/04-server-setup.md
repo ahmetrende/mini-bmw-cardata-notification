@@ -219,7 +219,7 @@ The car sends data only when something changes. To start the first message, do o
 
 After 1 or 2 minutes, the log shows lines `Message: vehicle.cabin...`.
 
-Real test: open a window halfway. Drive a short way. Park and leave the car. A notification "MINI left open: ..." must arrive in about 10 minutes.
+Real test: open a window halfway. Drive a short way. Park and leave the car. A notification "a part is open" must arrive in about 10 minutes. The title shows the lock state, for example "MINI not locked, a part is open".
 
 ## Done
 

@@ -12,8 +12,8 @@ The program reads the data stream of the BMW Group CarData service. You park the
 
 Example notification:
 
-> **MINI left open**
-> Open: sunroof (tilted) since 13:48, front right window since 13:50
+> **MINI locked, but a part is open**
+> Sunroof (tilted) since 13:48, front right window since 13:50
 
 The program only reads data. It sends no command to the car.
 

@@ -94,7 +94,7 @@ Menü adları uygulama sürümüne göre değişebilir. Android'de bildirim geç
 ## Güvenlik
 
 - Bildirimler uçtan uca şifreli değil. ntfy.sh sunucusu metni okuyabilir.
-- Metin yalnızca açık parçaları ve saatlerini söyler. Örnek: "Açık: sağ ön cam 13:50'den beri". Konum, plaka ve VIN yoktur.
+- Metin yalnızca açık parçaları ve saatlerini söyler. Örnek: "Sağ ön cam 13:50'den beri". Konum, plaka ve VIN yoktur.
 - Daha fazla gizlilik istersen kendi ntfy sunucunu kur. Sonra `config.json` dosyasında `ntfy_server` alanını ayarla.
 
 **Sıradaki adım:** [3. adım, sunucu kurulumu](04-sunucu-kurulumu.md) sayfasına geç.

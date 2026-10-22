@@ -12,8 +12,8 @@ Program, BMW Group'un CarData servisinden araç verisini okur. Aracı park edip 
 
 Örnek bildirim:
 
-> **MINI açık kaldı**
-> Açık: sağ ön cam, cam tavan (aralık)
+> **MINI kilitlendi ama açık parça var**
+> Cam tavan (aralık) 13:48'den beri, sağ ön cam 13:50'den beri
 
 Program yalnızca veri okur. Araca hiçbir komut yollamaz.
 
@@ -59,7 +59,7 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 | Durum | Bildirim |
 |---|---|
 | Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra. Aracı kilitlersen hemen. |
-| Parça hâlâ açık | İlk bildirimden 30 ve 90 dakika sonra hatırlatma. Sonra başka yok. Araca dönünce durur. |
+| Parça hala açık | İlk bildirimden 30 ve 90 dakika sonra hatırlatma. Sonra başka yok. Araca dönünce durur. |
 | Her şeyi kapattın | "Her şey kapandı" diyen tek bir mesaj. Araca döndüysen ve `lock_confirm` açıksa gelmez: bir sonraki kilit bunu söyler. |
 | Aracı kilitledin ve her parça kapalı | İsteğe bağlı (`lock_confirm`): "kilitlendi, her şey kapalı". Sistemin çalıştığını gösterir. |
 | Araç yolda | Bildirim yok |
@@ -88,13 +88,13 @@ Bildirimler birden fazla telefona gelebilir. Her telefon aynı konuya abone olur
 
 ## Sorumluluk reddi
 
-Bu proje resmî değildir. BMW Group ve MINI projeyi desteklemez. BMW, MINI ve CarData, sahiplerinin ticari markalarıdır. Projenin onlarla bir bağı yoktur.
+Bu proje resmi değildir. BMW Group ve MINI projeyi desteklemez. BMW, MINI ve CarData, sahiplerinin ticari markalarıdır. Projenin onlarla bir bağı yoktur.
 
 Programı kendi sorumluluğunda kullanırsın. Güvenlikle ilgili bir konuda tek kontrol yöntemin bu program olmasın. Portaldaki CarData kullanım şartlarına uy.
 
-## Geliştiriciler ve yapay zekâ araçları için
+## Geliştiriciler ve yapay zeka araçları için
 
-Bir yapay zekâ aracı kurulumda yardım edebilir. Ona bu repoyu ver. Araç [AGENTS.md](AGENTS.md) dosyasını okur. Giriş, kart ve onay adımlarını kullanıcı yapmalı.
+Bir yapay zeka aracı kurulumda yardım edebilir. Ona bu repoyu ver. Araç [AGENTS.md](AGENTS.md) dosyasını okur. Giriş, kart ve onay adımlarını kullanıcı yapmalı.
 
 ```bash
 npm ci

@@ -87,7 +87,7 @@ The free e2-micro server has a small CPU. Copy `/var/lib/mini-watch/messages.jso
 
 ## Short summary in Turkish
 
-Bu dosya, projeyi kurmaya yardım eden bir yapay zekâ aracı içindir. Kurulum rehberleri `docs/tr/` içinde.
+Bu dosya, projeyi kurmaya yardım eden bir yapay zeka aracı içindir. Kurulum rehberleri `docs/tr/` içinde.
 
 - Parola, kart numarası ve tek kullanımlık kodu asla sen yazma. Kullanıcı yazar.
 - Token, Client ID, konu adı, VIN ve IP adresini sohbete veya commit'e yazma.
