@@ -80,6 +80,47 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 
 Portal, araç tipine uygun öznitelikleri gösterir. Akış ise yalnızca aracının desteklediklerini yollar. Eksik bir öznitelik hata vermez, ama o parça için bildirim çalışmaz.
 
+## Yedek: yazarın tam seçim listesi
+
+Yazarın akışında bu 34 öznitelik var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan özniteliklere ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu öznitelikleri **Change data selection** ile yeniden işaretle.
+
+| Öznitelik | Ne için | Test edilen araç yolluyor mu? |
+|---|---|---|
+| `vehicle.vehicle.travelledDistance` | Sürüş tespiti (zorunlu) | evet |
+| `vehicle.cabin.door.status` | Kilit durumu: başlıklar, kilit onayı, sürüş tespiti (önerilir) | evet |
+| `vehicle.cabin.door.row1.driver.isOpen` | Kapı durumu (zorunlu) | evet |
+| `vehicle.cabin.door.row1.passenger.isOpen` | Kapı durumu (zorunlu) | evet |
+| `vehicle.cabin.door.row2.driver.isOpen` | Kapı durumu (zorunlu) | evet |
+| `vehicle.cabin.door.row2.passenger.isOpen` | Kapı durumu (zorunlu) | evet |
+| `vehicle.cabin.window.row1.driver.status` | Cam durumu, tam ya da kısmen açık (zorunlu) | evet |
+| `vehicle.cabin.window.row1.passenger.status` | Cam durumu, tam ya da kısmen açık (zorunlu) | evet |
+| `vehicle.cabin.window.row2.driver.status` | Cam durumu, tam ya da kısmen açık (zorunlu) | evet |
+| `vehicle.cabin.window.row2.passenger.status` | Cam durumu, tam ya da kısmen açık (zorunlu) | evet |
+| `vehicle.cabin.sunroof.status` | Cam tavan durumu (zorunlu) | evet |
+| `vehicle.cabin.sunroof.tiltStatus` | Cam tavan aralık durumu (zorunlu) | evet |
+| `vehicle.body.trunk.isOpen` | Bagaj durumu (zorunlu) | evet |
+| `vehicle.body.trunk.door.isOpen` | Bagaj durumu (zorunlu) | evet |
+| `vehicle.body.hood.isOpen` | Kaput durumu (zorunlu) | evet |
+| `vehicle.drivetrain.batteryManagement.header` | Batarya seviyesi (`notify_battery`) | evet |
+| `vehicle.drivetrain.electricEngine.kombiRemainingElectricRange` | Menzil (`notify_battery`) | evet |
+| `vehicle.drivetrain.lastRemainingRange` | Menzil, alternatif (`notify_battery`) | evet |
+| `vehicle.drivetrain.electricEngine.charging.status` | Şarj durumu (`notify_battery`) | evet |
+| `vehicle.body.chargingPort.status` | Fiş durumu (`notify_battery`) | evet |
+| `vehicle.cabin.sunroof.overallStatus` | Cam tavanın genel durumu. Program yalnızca kaydeder. | evet |
+| `vehicle.cabin.sunroof.relativePosition` | Cam tavan açıklığı (yüzde). Kullanılmıyor. | hayır |
+| `vehicle.drivetrain.engine.isIgnitionOn` | Kontak durumu. Araç yollarsa program kullanır. | hayır |
+| `vehicle.isMoving` | Hareket durumu. Araç yollarsa program kullanır. | hayır |
+| `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Batarya seviyesi, alternatif (`notify_battery`) | hayır |
+| `vehicle.drivetrain.electricEngine.remainingElectricRange` | Menzil, alternatif (`notify_battery`) | hayır |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.armStatus` | Alarm durumu. Kullanılmıyor. | hayır |
+| `vehicle.vehicle.speedRange.lowerBound` | Hız aralığı. Kullanılmıyor. | hayır |
+| `vehicle.vehicle.speedRange.upperBound` | Hız aralığı. Kullanılmıyor. | hayır |
+| `vehicle.body.trunk.isLocked` | Bagaj kilidi. Kullanılmıyor. | hayır |
+| `vehicle.powertrain.tractionBattery.charging.port.anyPosition.flap.isOpen` | Şarj kapağı. Kullanılmıyor. | hayır |
+| `vehicle.trip.segment.end.travelledDistance` | Son sürüşten sonraki kilometre. Kullanılmıyor. | hayır |
+| `vehicle.drivetrain.electricEngine.charging.connectorStatus` | Fiş türü ve durumu. Kullanılmıyor. | hayır |
+| `vehicle.drivetrain.electricEngine.charging.hvStatus` | Yüksek gerilim şarj sistemi. Kullanılmıyor. | hayır |
+
 ## Portalda karşılaşabileceğin sorunlar
 
 - **"Change data selection" düğmesi ilk basışta çalışmayabilir.** Sayfa değişmezse düğmeye bir kez daha bas.

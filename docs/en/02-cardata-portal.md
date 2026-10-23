@@ -80,6 +80,47 @@ Do **not** press **Authenticate device** now. You use that button in Step 3, aft
 
 The portal shows the attributes that exist for your car type. The stream sends only the attributes that your car supports. A missing attribute does not cause an error. The notification for that part does not work.
 
+## Backup: the full list of the author's selection
+
+The stream of the author has these 34 attributes. The program needs only the attributes that say "required", "recommended" or a setting name. The others are optional. If the portal loses your list, tick these attributes again with **Change data selection**.
+
+| Attribute | Use | Sent by the tested car |
+|---|---|---|
+| `vehicle.vehicle.travelledDistance` | Drive detection (required) | yes |
+| `vehicle.cabin.door.status` | Lock state: titles, lock confirmation, drive detection (recommended) | yes |
+| `vehicle.cabin.door.row1.driver.isOpen` | Door state (required) | yes |
+| `vehicle.cabin.door.row1.passenger.isOpen` | Door state (required) | yes |
+| `vehicle.cabin.door.row2.driver.isOpen` | Door state (required) | yes |
+| `vehicle.cabin.door.row2.passenger.isOpen` | Door state (required) | yes |
+| `vehicle.cabin.window.row1.driver.status` | Window state, fully or partly open (required) | yes |
+| `vehicle.cabin.window.row1.passenger.status` | Window state, fully or partly open (required) | yes |
+| `vehicle.cabin.window.row2.driver.status` | Window state, fully or partly open (required) | yes |
+| `vehicle.cabin.window.row2.passenger.status` | Window state, fully or partly open (required) | yes |
+| `vehicle.cabin.sunroof.status` | Sunroof state (required) | yes |
+| `vehicle.cabin.sunroof.tiltStatus` | Sunroof tilt state (required) | yes |
+| `vehicle.body.trunk.isOpen` | Trunk state (required) | yes |
+| `vehicle.body.trunk.door.isOpen` | Trunk state (required) | yes |
+| `vehicle.body.hood.isOpen` | Hood state (required) | yes |
+| `vehicle.drivetrain.batteryManagement.header` | Battery level (`notify_battery`) | yes |
+| `vehicle.drivetrain.electricEngine.kombiRemainingElectricRange` | Range (`notify_battery`) | yes |
+| `vehicle.drivetrain.lastRemainingRange` | Range, alternative (`notify_battery`) | yes |
+| `vehicle.drivetrain.electricEngine.charging.status` | Charging state (`notify_battery`) | yes |
+| `vehicle.body.chargingPort.status` | Plug state (`notify_battery`) | yes |
+| `vehicle.cabin.sunroof.overallStatus` | General sunroof state. The program only records it. | yes |
+| `vehicle.cabin.sunroof.relativePosition` | Sunroof opening in percent. Not used. | no |
+| `vehicle.drivetrain.engine.isIgnitionOn` | Ignition state. The program uses it if the car sends it. | no |
+| `vehicle.isMoving` | Motion state. The program uses it if the car sends it. | no |
+| `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Battery level, alternative (`notify_battery`) | no |
+| `vehicle.drivetrain.electricEngine.remainingElectricRange` | Range, alternative (`notify_battery`) | no |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.armStatus` | Alarm state. Not used. | no |
+| `vehicle.vehicle.speedRange.lowerBound` | Speed range. Not used. | no |
+| `vehicle.vehicle.speedRange.upperBound` | Speed range. Not used. | no |
+| `vehicle.body.trunk.isLocked` | Trunk lock. Not used. | no |
+| `vehicle.powertrain.tractionBattery.charging.port.anyPosition.flap.isOpen` | Charging port flap. Not used. | no |
+| `vehicle.trip.segment.end.travelledDistance` | Mileage after the last drive. Not used. | no |
+| `vehicle.drivetrain.electricEngine.charging.connectorStatus` | Plug type and state. Not used. | no |
+| `vehicle.drivetrain.electricEngine.charging.hvStatus` | High-voltage charging system. Not used. | no |
+
 ## Portal problems
 
 - **The button "Change data selection" can fail on the first press.** If the page does not change, press the button again.
