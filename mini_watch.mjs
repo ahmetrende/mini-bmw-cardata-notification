@@ -128,6 +128,7 @@ const TEXT = {
     allWindows: 'all windows',
     allDoors: 'all doors',
     rowPair: { row1: 'left and right front', row2: 'left and right rear' },
+    windowStates: { full: 'fully open', partial: 'partly open' },
     sunroof: 'sunroof',
     sunroofTilt: 'sunroof (tilted)',
     trunk: 'trunk',
@@ -173,6 +174,7 @@ const TEXT = {
     allWindows: 'tüm camlar',
     allDoors: 'tüm kapılar',
     rowPair: { row1: 'sol ve sağ ön', row2: 'sol ve sağ arka' },
+    windowStates: { full: 'tam açık', partial: 'kısmen açık' },
     sunroof: 'cam tavan',
     sunroofTilt: 'cam tavan (aralık)',
     trunk: 'bagaj',
@@ -548,8 +550,9 @@ function positionalPhrase(kind, keys, t) {
 }
 
 // The names of the parts in one group: windows together, doors together, then the other parts.
-// Order: the first part of each kind decides.
-export function describeParts(names, cfg = {}) {
+// Order: the first part of each kind decides. "openValues" (name -> OPEN, INTERMEDIATE, ...) is optional: with it,
+// the windows of one state are named together and show the state: "left and right front windows (partly open)".
+export function describeParts(names, cfg = {}, openValues = null) {
   const t = textFor(cfg);
   const entries = [];
   const positional = {};
@@ -558,11 +561,14 @@ export function describeParts(names, cfg = {}) {
     const found = /^vehicle\.cabin\.(window|door)\.(row\d\.(?:driver|passenger))\./.exec(name);
     if (found && t.positions[found[2]]) {
       const [, kind, key] = found;
-      if (!positional[kind]) {
-        positional[kind] = new Set();
-        entries.push({ kind });
+      const value = kind === 'window' ? String(openValues?.get(name) ?? '').toUpperCase() : '';
+      const state = value === 'OPEN' ? 'full' : value === 'INTERMEDIATE' ? 'partial' : '';
+      const group = `${kind}:${state}`;
+      if (!positional[group]) {
+        positional[group] = new Set();
+        entries.push({ kind, state, group });
       }
-      positional[kind].add(key);
+      positional[group].add(key);
     } else {
       const text = label(name, cfg);
       if (!seen.has(text)) {
@@ -571,7 +577,12 @@ export function describeParts(names, cfg = {}) {
       }
     }
   }
-  return joinList(entries.map((entry) => entry.text ?? positionalPhrase(entry.kind, positional[entry.kind], t)), t.and);
+  const phrase = (entry) => {
+    if (entry.text) return entry.text;
+    const text = positionalPhrase(entry.kind, positional[entry.group], t);
+    return entry.state ? `${text} (${t.windowStates[entry.state]})` : text;
+  };
+  return joinList(entries.map(phrase), t.and);
 }
 
 const parseBool = (value) => {
@@ -609,6 +620,7 @@ export class Watcher {
     this.random = random;
     this.name = name;
     this.openSince = new Map(); // attribute -> time it was first seen open
+    this.openValue = new Map(); // attribute -> the last open value (OPEN, INTERMEDIATE, ...)
     this.notified = new Set();
     this.alerted = false; // Did at least one "left open" notification go out?
     this.sawClose = false; // Did the program see a part close? Missing data does not count as closed.
@@ -680,6 +692,7 @@ export class Watcher {
   snapshot() {
     return {
       openSince: [...this.openSince],
+      openValue: [...this.openValue],
       lastKm: this.lastKm,
       kmChangedAt: this.kmChangedAt,
       lastDriverDoorAt: this.lastDriverDoorAt,
@@ -713,6 +726,7 @@ export class Watcher {
   // A part that is open for more than 24 hours keeps its time this way.
   restoreWatch(snap) {
     this.openSince = new Map(snap.openSince ?? []);
+    this.openValue = new Map(snap.openValue ?? []);
     this.lastKm = snap.lastKm ?? null;
     this.kmChangedAt = snap.kmChangedAt ?? 0;
     this.lastDriverDoorAt = snap.lastDriverDoorAt ?? 0;
@@ -939,7 +953,9 @@ export class Watcher {
       const value = String(item?.value ?? '').toUpperCase();
       if (OPEN_VALUES.has(value)) {
         if (!this.openSince.has(name)) this.openSince.set(name, at);
+        this.openValue.set(name, value);
       } else if (CLOSED_VALUES.has(value)) {
+        this.openValue.delete(name);
         if (this.openSince.delete(name)) {
           this.sawClose = true;
           if (this.openSince.size === 0) this.allClosedSince = at;
@@ -1079,7 +1095,7 @@ export class Watcher {
         const when = t.since(formatTime(shownSince(name), this.cfg, this.clock()));
         groups.set(when, [...(groups.get(when) ?? []), name]);
       }
-      const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg)} ${when}`).join(', ');
+      const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg, this.openValue)} ${when}`).join(', ');
       const title = withName((added ? t.openTitle : t.stillOpenTitle)[this.lockKind()], this.name());
       const sent = await ntfy(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
       if (!this.notifyResult(sent)) return;

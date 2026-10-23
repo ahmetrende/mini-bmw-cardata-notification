@@ -83,7 +83,7 @@ test('no notification while driving, one combined notification after the driver 
   assert.equal(lines.length, 1, 'one combined notification');
   // The driver door is still open, so it is in the list too. Parts that were open during the drive
   // show the start of the park (the driver door at 00:15). The oldest open part still comes first.
-  assert.match(lines[0], /MINI: a part is open: Sunroof \(tilted\), front right window and front left door since 00:15$/);
+  assert.match(lines[0], /MINI: a part is open: Sunroof \(tilted\), front right window \(partly open\) and front left door since 00:15$/);
 });
 
 test('a new drive resets the notification memory', async () => {
@@ -159,7 +159,7 @@ test('Turkish text with language "tr"', async () => {
   watcher.onData(msg({ [WIN]: 'OPEN', [TILT]: 'OPEN' }), at(0));
   at(10);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /MINI'de açık parça var: Sağ ön cam ve cam tavan \(aralık\) 00:00'dan beri$/);
+  assert.match(lines[0], /MINI'de açık parça var: Sağ ön cam \(tam açık\) ve cam tavan \(aralık\) 00:00'dan beri$/);
 });
 
 test('label names the part in both languages', () => {
@@ -176,7 +176,7 @@ test('the notification names the time each part opened, oldest first', async () 
   watcher.onData(msg({ [WIN]: 'OPEN' }), at(13, 50));
   watcher.onData(msg({ [TILT]: 'OPEN' }), at(13, 48));
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /MINI: a part is open: Sunroof \(tilted\) since 6 Jan 13:48, front right window since 6 Jan 13:50/);
+  assert.match(lines[0], /MINI: a part is open: Sunroof \(tilted\) since 6 Jan 13:48, front right window \(fully open\) since 6 Jan 13:50/);
 });
 
 test('Turkish notification has the time with the right suffix', async () => {
@@ -972,7 +972,7 @@ test('parts with the same time are grouped, groups are separated by a comma', as
   watcher.onData(msg({ [WIN]: 'OPEN' }), t0 + 3600 + 20); // 20 seconds later: the same minute
   at(120);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /^\[ntfy off\] MINI: a part is open: Sunroof \(tilted\) since 00:00, front left and rear right doors and front right window since 01:00$/);
+  assert.match(lines[0], /^\[ntfy off\] MINI: a part is open: Sunroof \(tilted\) since 00:00, front left and rear right doors and front right window \(fully open\) since 01:00$/);
 });
 
 test('Turkish: parts with the same time are grouped with "ve"', async () => {
@@ -1008,6 +1008,53 @@ const W = (row, side) => `vehicle.cabin.window.${row}.${side}.status`;
 const D = (row, side) => `vehicle.cabin.door.${row}.${side}.isOpen`;
 const en = { language: 'en' };
 const tr = { language: 'tr' };
+
+// ---- A window shows if it is fully open or partly open ----
+
+const values = (entries) => new Map(entries);
+
+test('window state: the windows of one state share the name and show the state', () => {
+  const state = values([[W('row1', 'driver'), 'OPEN'], [W('row1', 'passenger'), 'OPEN'], [W('row2', 'driver'), 'INTERMEDIATE']]);
+  const names = [W('row1', 'driver'), W('row2', 'driver'), W('row1', 'passenger')];
+  assert.equal(describeParts(names, en, state), 'left and right front windows (fully open) and rear left window (partly open)');
+  assert.equal(describeParts(names, tr, state), 'sol ve sağ ön cam (tam açık) ve sol arka cam (kısmen açık)');
+});
+
+test('window state: all four windows in the same state', () => {
+  const names = ['row1.driver', 'row1.passenger', 'row2.driver', 'row2.passenger'].map((key) => `vehicle.cabin.window.${key}.status`);
+  const state = values(names.map((name) => [name, 'INTERMEDIATE']));
+  assert.equal(describeParts(names, en, state), 'all windows (partly open)');
+  assert.equal(describeParts(names, tr, state), 'tüm camlar (kısmen açık)');
+});
+
+test('window state: without a known value the name has no state, the doors and the other parts never have one', () => {
+  assert.equal(describeParts([W('row1', 'driver')], en), 'front left window');
+  assert.equal(describeParts([W('row1', 'driver')], en, values([[W('row1', 'driver'), 'WEIRD']])), 'front left window');
+  assert.equal(describeParts([D('row1', 'driver'), 'vehicle.cabin.sunroof.status'], en, values([[D('row1', 'driver'), 'TRUE']])), 'front left door and sunroof');
+});
+
+test('window state: the state follows the window while it stays open', async () => {
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [KM]: 100, [WIN]: 'INTERMEDIATE' }), at(0));
+  watcher.onData(msg({ [WIN]: 'OPEN' }), at(5)); // opened further, the time stays 00:00
+  at(15);
+  const [line] = await logsDuring(() => watcher.check());
+  assert.match(line, /Front right window \(fully open\) since 00:00$/);
+});
+
+test('window state: the state is saved for a restart', () => {
+  const { watcher, at } = virtualWatcher();
+  watcher.onData(msg({ [WIN]: 'INTERMEDIATE' }), at(1));
+  const snap = JSON.parse(JSON.stringify(watcher.snapshot()));
+  const restored = virtualWatcher().watcher;
+  restored.restoreWatch(snap);
+  assert.equal(restored.openValue.get(WIN), 'INTERMEDIATE');
+  const old = { ...snap };
+  delete old.openValue; // a state from an older version
+  const older = virtualWatcher().watcher;
+  older.restoreWatch(old);
+  assert.equal(describeParts([WIN], en, older.openValue), 'front right window');
+});
 
 test('describeParts: left and right of one row share the name (Turkish)', () => {
   assert.equal(describeParts([W('row1', 'driver'), W('row1', 'passenger')], tr), 'sol ve sağ ön cam');
@@ -1046,7 +1093,7 @@ test('a notification: the two front windows and the driver door, one time', asyn
   watcher.onData(msg({ [W('row1', 'driver')]: 'OPEN', [W('row1', 'passenger')]: 'OPEN', [DRIVER_DOOR]: true }), t0);
   at(20);
   const lines = await logsDuring(() => watcher.check());
-  assert.match(lines[0], /Sol ve sağ ön cam ve sol ön kapı 00:00'dan beri$/);
+  assert.match(lines[0], /Sol ve sağ ön cam \(tam açık\) ve sol ön kapı 00:00'dan beri$/);
 });
 
 // ---- Lock confirmation (lock_confirm): "locked, everything is closed" ----
