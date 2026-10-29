@@ -74,6 +74,7 @@ Bildirimler birden fazla telefona gelebilir. Her telefon aynı konuya abone olur
 - **Test edilen araç kontak ve hız bilgisi yollamıyor.** Program, aracın yolda olduğunu kilometre sayacından ve kilitten anlar.
 - **Kilitlemezsen bildirim, sürücü kapısı açıldıktan 10 dakika sonra gelir.** Araç ilk kilometre verisini yola çıktıktan 3-7 dakika sonra yollar. Daha kısa bir bekleme, yola çıkarken yanlış bildirim üretir.
 - **Sürücü kapısı açılmadan uzun süre durursan** (30 dakika veya daha fazla) araç park edilmiş sayılır.
+- **Teslim garantisi yok.** ntfy.sh bazen bir bildirimi kaybedebilir (test kurulumunda yaklaşık 20'de 1). Bkz. [Kaybolan bildirimler](docs/tr/03-ntfy.md#kaybolan-bildirimler).
 - **Hesap başına tek bağlantı var.** Programı aynı hesapla iki yerde çalıştırma.
 - **BMW servisi değiştirebilir.** Program habersiz çalışmayı bırakabilir.
 

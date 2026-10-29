@@ -77,6 +77,15 @@ sudo grep ntfy_topic /var/lib/mini-watch/config.json
 3. Sunucuda `sudo mini-watch ntfy-test` komutunu çalıştır. Yeni telefonda deneme bildirimi görünmeli.
 4. Eski telefondaki ntfy uygulamasında aboneliği sil. Eski telefonu kaybedersen ya da başkasına verirsen bunun yerine yeni bir konu adı üret ("Birden fazla telefon" bölümünün son notuna bak).
 
+## Kaybolan bildirimler
+
+ntfy.sh teslimatı garanti etmez. Program bildirimi yollasa ve ntfy.sh onu kaydetse de bildirim bazen telefona ulaşmaz.
+
+- iPhone'da ntfy.sh push'u Google Firebase ve Apple üzerinden yollar. Firebase bir mesajı bir sınır yüzünden reddederse ntfy.sh o yayıncının push'larını 10 dakika durdurur. Mesaj ntfy.sh'te kalır. Kaynak: ntfy yapılandırma rehberi.
+- Test kurulumunda 19 günde 4 bildirim kayboldu (yaklaşık 20'de 1). İki telefon aynı mesajı aynı anda kaçırdı.
+- Kaybolan bir bildirimi aramak için önce kilit ekranına ve Bildirim Merkezi'ne bak. Sonra ntfy uygulamasını aç ve listeyi aşağı çek. Uygulama yalnız elindeki en yeni mesajdan sonrakileri yükler. Daha yeni bir mesajdan önce kaybolan mesaj görünmez.
+- Sunucu günlüğü, yollanan her bildirimi ntfy kimliğiyle gösterir: `sudo journalctl -u mini-watch --no-pager | grep "Notification sent"`.
+
 ## Telefon notları
 
 **iPhone.** Program iPhone ile test edildi. Uygulama izin isteyince bildirimlere izin ver.

@@ -82,7 +82,7 @@ Portal, araç tipine uygun öznitelikleri gösterir. Akış ise yalnızca aracı
 
 ## Yedek: yazarın tam seçim listesi
 
-Yazarın akışında bu 34 öznitelik var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan özniteliklere ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu öznitelikleri **Change data selection** ile yeniden işaretle.
+Yazarın akışında bu 38 öznitelik var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan özniteliklere ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu öznitelikleri **Change data selection** ile yeniden işaretle.
 
 | Öznitelik | Ne için | Test edilen araç yolluyor mu? |
 |---|---|---|
@@ -120,6 +120,10 @@ Yazarın akışında bu 34 öznitelik var. Program yalnızca "zorunlu", "öneril
 | `vehicle.trip.segment.end.travelledDistance` | Son sürüşten sonraki kilometre. Kullanılmıyor. | hayır |
 | `vehicle.drivetrain.electricEngine.charging.connectorStatus` | Fiş türü ve durumu. Kullanılmıyor. | hayır |
 | `vehicle.drivetrain.electricEngine.charging.hvStatus` | Yüksek gerilim şarj sistemi. Kullanılmıyor. | hayır |
+| `vehicle.cabin.door.row1.driver.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
+| `vehicle.cabin.door.row1.passenger.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
+| `vehicle.cabin.door.row2.driver.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
+| `vehicle.cabin.door.row2.passenger.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
 
 ## Portalda karşılaşabileceğin sorunlar
 

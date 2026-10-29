@@ -77,6 +77,15 @@ sudo grep ntfy_topic /var/lib/mini-watch/config.json
 3. Run `sudo mini-watch ntfy-test` on the server. The new phone must show the test notification.
 4. Delete the subscription in the ntfy app of the old phone. If you lose or give away the old phone, make a new topic name instead (see the last note in "More than one phone").
 
+## Lost notifications
+
+ntfy.sh gives no delivery guarantee. Sometimes a notification does not arrive on the phone, although the program sent it and ntfy.sh has it.
+
+- On an iPhone, ntfy.sh sends the push through Google Firebase and Apple. If Firebase refuses a message because of a limit, ntfy.sh stops the pushes of that sender for 10 minutes. The message stays on ntfy.sh. Source: the ntfy configuration guide.
+- The tested setup lost 4 notifications in 19 days (about 1 in 20). Two phones lost the same message at the same time.
+- To find a lost notification, look at the lock screen and the notification center first. Then open the ntfy app and pull down the list. The app loads only the messages after its newest message. A lost message before a newer one does not show.
+- The server log shows each sent notification with its ntfy id: `sudo journalctl -u mini-watch --no-pager | grep "Notification sent"`.
+
 ## Phone notes
 
 **iPhone.** The author tested the program with an iPhone. Allow notifications when the app asks.

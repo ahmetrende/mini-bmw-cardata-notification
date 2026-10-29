@@ -82,7 +82,7 @@ The portal shows the attributes that exist for your car type. The stream sends o
 
 ## Backup: the full list of the author's selection
 
-The stream of the author has these 34 attributes. The program needs only the attributes that say "required", "recommended" or a setting name. The others are optional. If the portal loses your list, tick these attributes again with **Change data selection**.
+The stream of the author has these 38 attributes. The program needs only the attributes that say "required", "recommended" or a setting name. The others are optional. If the portal loses your list, tick these attributes again with **Change data selection**.
 
 | Attribute | Use | Sent by the tested car |
 |---|---|---|
@@ -120,6 +120,10 @@ The stream of the author has these 34 attributes. The program needs only the att
 | `vehicle.trip.segment.end.travelledDistance` | Mileage after the last drive. Not used. | no |
 | `vehicle.drivetrain.electricEngine.charging.connectorStatus` | Plug type and state. Not used. | no |
 | `vehicle.drivetrain.electricEngine.charging.hvStatus` | High-voltage charging system. Not used. | no |
+| `vehicle.cabin.door.row1.driver.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
+| `vehicle.cabin.door.row1.passenger.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
+| `vehicle.cabin.door.row2.driver.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
+| `vehicle.cabin.door.row2.passenger.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
 
 ## Portal problems
 
