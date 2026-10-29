@@ -89,7 +89,7 @@ ntfy.sh gives no delivery guarantee. The program knows only that ntfy.sh accepte
   3. Run `sudo mini-watch ntfy-check <id>` on the server.
   4. Read the result. "found": ntfy has the message, so the loss is after ntfy. "missing": the cache time ended (12 hours by default), or ntfy never kept the message. "unknown": the check gives no conclusion. An ntfy server that ignores the message id of the check can send more than 64 KB, and then the result is "unknown".
 
-ntfy gives no delivery confirmation. If a lost notification is not acceptable, a service with a delivery confirmation is an option, for example Pushover with emergency priority and a receipt. This program does not support it.
+ntfy gives no delivery confirmation. If a lost notification is not acceptable, a service with a delivery confirmation is an option, for example Pushover with emergency priority and a receipt. This program does not support the emergency priority and the receipt. Without them, it can send all notifications through Pushover instead of ntfy. See [Pushover](06-pushover.md).
 
 ## Phone notes
 

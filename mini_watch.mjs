@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Listens to the BMW/MINI CarData stream. Sends a phone notification through ntfy
-// when a door, window, sunroof, trunk or hood stays open after you park.
+// Listens to the BMW/MINI CarData stream. Sends a phone notification through ntfy (default) or Pushover
+// (notify_service) when a door, window, sunroof, trunk or hood stays open after you park.
 //
 //   node mini_watch.mjs login             # once: get a device code, approve it in the browser
 //   node mini_watch.mjs run               # listen to the stream (runs forever)
 //   node mini_watch.mjs ntfy-test         # send a test notification to the phone
 //   node mini_watch.mjs ntfy-check <id>   # ask ntfy if its cache still has the message with this id. Sends nothing.
+//   node mini_watch.mjs pushover-test     # send a test notification through Pushover, also when notify_service is "ntfy"
 //   node mini_watch.mjs doctor [--offline] # check the settings, files and connections. Sends nothing.
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -66,6 +67,16 @@ const SAVE_EVERY_S = 60; // Save the open parts at most once a minute. Save at o
 const PROGRESS_LIMIT_S = 600; // The watchdog ping stops when the main loop did not run for 10 minutes.
 const EXAMPLE_TOPIC = 'mini-your-long-random-name'; // The example topic of older versions. Everybody knows it.
 const MIN_TOPIC_LENGTH = 16;
+// The notification services. One of them sends all notifications (notify_service). ntfy is the default.
+const NOTIFY_SERVICES = ['ntfy', 'pushover'];
+// Pushover. The addresses are fixed: they are not settings. A token and a user key have 30 letters and digits.
+const PUSHOVER_MESSAGES_URL = 'https://api.pushover.net/1/messages.json';
+const PUSHOVER_VALIDATE_URL = 'https://api.pushover.net/1/users/validate.json';
+const PUSHOVER_KEY = /^[A-Za-z0-9]{30}$/;
+// A request id that the log can show. Another value shows as "(not printable)": an answer can contain an address.
+const PUSHOVER_REQUEST_ID = /^[A-Za-z0-9-]{1,64}$/;
+const PUSHOVER_TITLE_MAX = 250; // characters
+const PUSHOVER_MESSAGE_MAX = 1024; // characters
 
 // Attributes that carry an open or closed state. The charge flap, the trunk lock and the
 // door lock (vehicle.cabin.door.status) are not included.
@@ -295,6 +306,12 @@ export const DEFAULT_CONFIG = {
   // The emoji at the start of the title. An ntfy tag name for each kind of notification. A comma gives more
   // than one tag. The list of names: https://docs.ntfy.sh/emojis/. A missing key keeps its default.
   ntfy_tags: { open: 'warning', still_open: 'warning', closed: 'white_check_mark', locked: 'lock', silence: 'grey_question', test: 'car' },
+  // The service that sends the notifications: "ntfy" or "pushover". See docs/en/06-pushover.md.
+  notify_service: 'ntfy',
+  // Pushover: the API token of the application and the user key (or a delivery group key). Secrets.
+  // The program checks and uses them only when notify_service is "pushover", and in the command "pushover-test".
+  pushover_token: '',
+  pushover_user: '',
 };
 
 // Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
@@ -365,6 +382,10 @@ export function checkConfig(cfg) {
   }
   if (!serverUrl) throw new Error('"ntfy_server" must be an address like "https://ntfy.sh". Now it is not valid.');
   if (serverUrl.username || serverUrl.password) throw new Error('"ntfy_server" must not have a user name or a password. The program does not use them.');
+  // The text does not show the value: a token or a key can be in the wrong field.
+  if (!NOTIFY_SERVICES.includes(cfg.notify_service)) throw new Error('"notify_service" must be "ntfy" or "pushover". Now it is not valid.');
+  // With "ntfy" the Pushover settings are not used, so they are not checked.
+  if (cfg.notify_service === 'pushover') checkPushover(cfg);
   const known = new Set([...Object.keys(DEFAULT_CONFIG), 'client_id']);
   const unknown = Object.keys(cfg).filter((key) => !known.has(key));
   if (unknown.length) log(`Warning: config.json has unknown settings: ${unknown.join(', ')}. The program ignores them.`);
@@ -398,6 +419,21 @@ export function checkTopic(cfg) {
       `Set "ntfy_topic" in config.json to a long random name (${MIN_TOPIC_LENGTH} characters or more). ` +
         'Make one with: echo "mini-$(openssl rand -hex 9)". See docs/en/03-ntfy.md.',
     );
+  }
+}
+
+// The Pushover token and user key must have the form of a Pushover key. The texts never show the values.
+export function checkPushover(cfg) {
+  const fields = [
+    ['pushover_token', 'the API token of your application'],
+    ['pushover_user', 'your user key or a delivery group key'],
+  ];
+  for (const [key, what] of fields) {
+    const value = cfg[key] ?? '';
+    if (value === '') throw new Error(`Set "${key}" in config.json to ${what} from pushover.net. See docs/en/06-pushover.md.`);
+    if (typeof value !== 'string' || !PUSHOVER_KEY.test(value)) {
+      throw new Error(`"${key}" must have 30 letters and digits (A-Z, a-z, 0-9), with no space. Now it is not valid. See docs/en/06-pushover.md.`);
+    }
   }
 }
 
@@ -684,6 +720,155 @@ export async function ntfyCheck(cfg, id) {
   if (result.status === 'missing') return 1;
   log('No conclusion about the message is possible.');
   return 2;
+}
+
+// ---- Pushover: the other notification service (notify_service "pushover"). ntfy() above does not change. ----
+
+// The emoji of an ntfy tag name. Pushover has no tags, so the title starts with the emoji. An unknown tag gives none.
+const PUSHOVER_EMOJI = new Map([
+  ['warning', '⚠️'],
+  ['rotating_light', '🚨'],
+  ['white_check_mark', '✅'],
+  ['lock', '🔒'],
+  ['grey_question', '❔'],
+  ['blue_car', '🚙'],
+  ['car', '🚗'],
+]);
+
+// A text with at most `max` characters (Unicode code points). A longer text ends with "…".
+function cutText(text, max) {
+  const chars = Array.from(String(text));
+  return chars.length <= max ? String(text) : `${chars.slice(0, max - 1).join('')}…`;
+}
+
+// The title for Pushover: the emoji of each known tag, in the order of the tags (as the ntfy app shows them), then the title.
+// No space at the start or at the end, also with an empty title.
+export function pushoverTitle(title, tags) {
+  const emoji = String(tags ?? '')
+    .split(',')
+    .map((tag) => PUSHOVER_EMOJI.get(tag) ?? '')
+    .join('');
+  return cutText([emoji, String(title ?? '').trim()].filter(Boolean).join(' '), PUSHOVER_TITLE_MAX);
+}
+
+// Replaces the Pushover token and user key in a text with "<token>" and "<user>".
+function hidePushoverKeys(cfg, text) {
+  return [
+    [cfg.pushover_token, '<token>'],
+    [cfg.pushover_user, '<user>'],
+  ]
+    .filter(([secret]) => typeof secret === 'string' && secret !== '')
+    .reduce((result, [secret, name]) => result.split(secret).join(name), String(text));
+}
+
+// Why a request to Pushover got no answer, for a log line: "in 15 seconds" or the error code, for example "(ENOTFOUND)".
+// Never the error text: it can contain the address. A code that is not a plain name shows as "(Error)".
+function pushoverNoAnswer(cfg, err) {
+  if (err?.name === 'TimeoutError') return `in ${HTTP_TIMEOUT_MS / 1000} seconds`;
+  const raw = hidePushoverKeys(cfg, String(err?.cause?.code ?? err?.name ?? ''));
+  return `(${/^[A-Za-z][A-Za-z0-9_]{1,39}$/.test(raw) ? raw : 'Error'})`;
+}
+
+// The request id of an answer of Pushover: a JSON object with status 1 and a non-empty string request. Else null.
+function pushoverRequest(value) {
+  const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
+  return isObject && value.status === 1 && typeof value.request === 'string' && value.request !== '' ? value.request : null;
+}
+
+// A form POST to Pushover. The body has the token, so the request must not follow a redirect to another address.
+// "manual": fetch does not follow a redirect. It returns the 3xx answer, and the caller treats it as a failure.
+function pushoverPost(url, fields) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: new URLSearchParams(fields),
+    redirect: 'manual',
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+  });
+}
+
+const isRedirect = (status) => status >= 300 && status < 400;
+const REDIRECT_TEXT = 'a redirect. The program does not follow it.';
+
+// Sends one notification through Pushover. The arguments are the same as for ntfy(). Priority "high" becomes
+// Pushover priority 1, all others 0. Returns true only when Pushover accepted the message: HTTP 2xx and an answer
+// with status 1 and a request id. These priorities give no delivery confirmation either. A 2xx answer without a
+// request id returns false, so the retry runs, as with ntfy. An empty token or user key prints the text and
+// returns true (tools/replay.mjs). The log never shows the token, the user key or the address.
+export async function pushover(cfg, title, text, priority = 'high', tags = 'warning') {
+  if (!cfg.pushover_token || !cfg.pushover_user) {
+    log(`[ntfy off] ${title}: ${text}`);
+    return true;
+  }
+  try {
+    const resp = await pushoverPost(PUSHOVER_MESSAGES_URL, {
+      token: cfg.pushover_token,
+      user: cfg.pushover_user,
+      title: pushoverTitle(title, tags),
+      message: cutText(text, PUSHOVER_MESSAGE_MAX),
+      priority: priority === 'high' ? '1' : '0',
+    });
+    if (!resp.ok) {
+      await resp.body?.cancel?.();
+      log(isRedirect(resp.status) ? `Notification failed: HTTP ${resp.status}, ${REDIRECT_TEXT}` : `Notification failed: HTTP ${resp.status}`);
+      return false;
+    }
+    let request = null;
+    try {
+      request = pushoverRequest(JSON.parse(await readBody(resp)));
+    } catch {
+      request = null; // The answer cannot be read, is too large or is not JSON.
+    }
+    if (!request) {
+      log(`Notification not confirmed by Pushover: HTTP ${resp.status}, the answer has no request id`);
+      return false;
+    }
+    // Any non-empty request id counts as accepted. The log shows it only when it has the form of an id and no key.
+    const printable = PUSHOVER_REQUEST_ID.test(request) && hidePushoverKeys(cfg, request) === request;
+    log(`Notification accepted by Pushover: ${title}: ${text} (request ${printable ? request : '(not printable)'}, HTTP ${resp.status})`);
+    return true;
+  } catch (err) {
+    log(`Notification failed: no answer from Pushover ${pushoverNoAnswer(cfg, err)}`);
+    return false;
+  }
+}
+
+// Sends one notification through the service of notify_service: ntfy (the default) or Pushover. The arguments
+// go unchanged to ntfy() or pushover(). Each value other than "pushover" uses ntfy, as before this setting.
+export function notify(cfg, title, text, priority, tags) {
+  if (cfg.notify_service === 'pushover') return pushover(cfg, title, text, priority, tags);
+  return ntfy(cfg, title, text, priority, tags);
+}
+
+// Asks Pushover if the token and the user key are valid (doctor). It sends no notification. Returns { ok, text }.
+// The text never has the token, the user key, the address or an error text.
+export async function validatePushover(cfg) {
+  let resp;
+  try {
+    resp = await pushoverPost(PUSHOVER_VALIDATE_URL, { token: String(cfg.pushover_token ?? ''), user: String(cfg.pushover_user ?? '') });
+  } catch (err) {
+    return { ok: false, text: `Pushover cannot be reached: no answer ${pushoverNoAnswer(cfg, err)}.` };
+  }
+  let answer = null;
+  try {
+    answer = JSON.parse(await readBody(resp));
+  } catch {
+    answer = null; // The answer cannot be read, is too large or is not JSON.
+  }
+  const isObject = answer !== null && typeof answer === 'object' && !Array.isArray(answer);
+  if (resp.ok && isObject && answer.status === 1) {
+    return { ok: true, text: `Pushover accepted the token and the user key: HTTP ${resp.status}. The check sent no notification.` };
+  }
+  if (resp.ok) return { ok: false, text: `The Pushover check is not confirmed: HTTP ${resp.status}, the answer has no status 1.` };
+  if (isRedirect(resp.status)) return { ok: false, text: `The Pushover check failed: HTTP ${resp.status}, ${REDIRECT_TEXT}` };
+  if (resp.status === 429) return { ok: false, text: 'Pushover refused the check: HTTP 429. Too many requests. Try again later.' };
+  if (resp.status >= 500) return { ok: false, text: `The Pushover check failed: HTTP ${resp.status}. Try again later.` };
+  // Pushover names the wrong field with the value "invalid". The text uses fixed words only.
+  const wrong = [
+    ...(isObject && answer.token === 'invalid' ? ['the token is not valid'] : []),
+    ...(isObject && answer.user === 'invalid' ? ['the user key is not valid'] : []),
+  ];
+  return { ok: false, text: `Pushover refused the check: HTTP ${resp.status}${wrong.length ? `, ${wrong.join(' and ')}` : ''}.` };
 }
 
 export function label(name, cfg = {}) {
@@ -1135,8 +1320,8 @@ export class Watcher {
     }
   }
 
-  // A failed notification (ntfy not reachable, an HTTP error, or a 2xx answer without a message id) does not
-  // change the state. The first check after the wait decides again if the notification is still needed: a part
+  // A failed notification (ntfy or Pushover not reachable, an HTTP error, or a 2xx answer without a message id
+  // or a request id) does not change the state. The first check after the wait decides again if the notification is still needed: a part
   // that closed needs no alert, and a lock confirmation is only sent within 10 minutes of the lock.
   // The base wait is 30 seconds. It doubles with each failure in a row and stops at 10 minutes. A random factor
   // from 0.8 to 1.2 spreads the tries, so the longest wait is about 12 minutes.
@@ -1173,7 +1358,7 @@ export class Watcher {
       return;
     }
     if (this.holdForCharge()) return; // The next check asks again.
-    const sent = await ntfy(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
+    const sent = await notify(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;
     this.lastSentAt = now;
@@ -1223,7 +1408,7 @@ export class Watcher {
       if (this.alerted && this.sawClose) {
         if (this.clock() - this.allClosedSince < CLOSED_SETTLE_S) return; // A door may open next. The next check asks again.
         if (this.holdForCharge()) return;
-        const sent = await ntfy(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'));
+        const sent = await notify(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'));
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
@@ -1262,7 +1447,7 @@ export class Watcher {
       }
       const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg, this.openValue)} ${when}`).join(', ');
       const title = withName((added ? t.openTitle : t.stillOpenTitle)[this.lockKind()], this.name());
-      const sent = await ntfy(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
+      const sent = await notify(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
@@ -1337,7 +1522,7 @@ export class Fleet {
     if (!hours || this.silenceAlerted || this.clock() < this.silenceRetryAt) return;
     if (this.clock() - (this.lastMessageAt || this.startedAt) < hours * 3600) return;
     const t = textFor(this.cfg);
-    if (await ntfy(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', tagFor(this.cfg, 'silence'))) {
+    if (await notify(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', tagFor(this.cfg, 'silence'))) {
       this.silenceAlerted = true;
       this.dirty = true;
     } else {
@@ -1480,6 +1665,8 @@ function startWatchdog() {
 }
 
 async function run(cfg) {
+  // With the default service (ntfy) the log does not change. With Pushover it says so once at the start.
+  if (cfg.notify_service === 'pushover') log('Notification service: Pushover.');
   const fleet = new Fleet(cfg, { stateFile: STATE });
   fleet.loadSnapshot();
   await replayRecent(fleet);
@@ -1637,8 +1824,20 @@ async function doctor({ offline = false } = {}) {
     cfg = loadConfig();
     report('OK', 'config.json is valid.');
     requireClientId(cfg);
-    checkTopic(cfg);
-    report('OK', 'client_id and ntfy_topic are set.');
+    if (cfg.notify_service === 'pushover') {
+      // loadConfig() checked the form of the Pushover keys. The lines do not show the keys.
+      report('OK', 'client_id is set.');
+      report('OK', 'Notification service: Pushover. pushover_token and pushover_user have the right form.');
+      // Pushover does not need the topic. A release before Pushover (install.sh --rollback) and ntfy-test need it.
+      try {
+        checkTopic(cfg);
+      } catch {
+        report('WARN', 'ntfy_topic is empty or not valid. Keep a valid ntfy_topic in config.json: ntfy-test and a rollback to a release before Pushover need it.');
+      }
+    } else {
+      checkTopic(cfg);
+      report('OK', 'client_id and ntfy_topic are set.');
+    }
   } catch (err) {
     report('FAIL', err.message);
   }
@@ -1691,12 +1890,23 @@ async function doctor({ offline = false } = {}) {
   if (offline) return failed ? 1 : 0;
 
   if (cfg) {
+    // With Pushover the service does not use ntfy, so an ntfy problem is a warning. With ntfy nothing changes.
+    const pushoverOn = cfg.notify_service === 'pushover';
+    const ntfyProblem = pushoverOn ? 'WARN' : 'FAIL';
+    const ntfyNote = pushoverOn ? ' The service uses Pushover now, so this is a warning only.' : '';
     try {
       const resp = await fetch(new URL('/v1/health', cfg.ntfy_server), { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
       await resp.body?.cancel();
-      report(resp.ok ? 'OK' : 'FAIL', `ntfy server ${cfg.ntfy_server}: HTTP ${resp.status}.`);
+      report(resp.ok ? 'OK' : ntfyProblem, `ntfy server ${cfg.ntfy_server}: HTTP ${resp.status}.${resp.ok ? '' : ntfyNote}`);
     } catch (err) {
-      report('FAIL', `ntfy server ${cfg.ntfy_server} cannot be reached: ${err.message}`);
+      // With Pushover the error text gets a period before the note. With ntfy the line stays as before.
+      const reason = pushoverOn ? `${String(err.message).replace(/\.+$/, '')}.` : err.message;
+      report(ntfyProblem, `ntfy server ${cfg.ntfy_server} cannot be reached: ${reason}${ntfyNote}`);
+    }
+    // Only with notify_service "pushover". Pushover checks the token and the user key and sends no notification.
+    if (cfg.notify_service === 'pushover') {
+      const result = await validatePushover(cfg);
+      report(result.ok ? 'OK' : 'FAIL', result.text);
     }
   }
   try {
@@ -1714,7 +1924,10 @@ async function main() {
   try {
     const cfg = loadConfig();
     if (command === 'login' || command === 'run') requireClientId(cfg);
-    if (command === 'run' || command === 'ntfy-test' || command === 'ntfy-check') checkTopic(cfg);
+    // With Pushover, "run" needs no ntfy topic. ntfy-test and ntfy-check always need it.
+    if ((command === 'run' && cfg.notify_service !== 'pushover') || command === 'ntfy-test' || command === 'ntfy-check') checkTopic(cfg);
+    // pushover-test works with each notify_service, so it checks the Pushover keys itself.
+    if (command === 'pushover-test') checkPushover(cfg);
     if (command === 'run' && !existsSync(TOKENS)) {
       throw new Error(`${TOKENS} not found. Run the "login" command first (docs/en/04-server-setup.md, part 7).`);
     }
@@ -1725,8 +1938,14 @@ async function main() {
       process.exit((await ntfy(cfg, t.testTitle, t.testBody, 'default', tagFor(cfg, 'test'))) ? 0 : 1);
     } else if (command === 'ntfy-check') {
       process.exit(await ntfyCheck(cfg, process.argv[3]));
+    } else if (command === 'pushover-test') {
+      // The same texts as ntfy-test. It sends a real notification through Pushover, whatever notify_service is.
+      const t = textFor(cfg);
+      const accepted = await pushover(cfg, t.testTitle, t.testBody, 'default', tagFor(cfg, 'test'));
+      log(accepted ? 'Result: Pushover accepted the test notification. Check the phone.' : 'Result: Pushover did not accept the test notification. See the line above.');
+      process.exit(accepted ? 0 : 1);
     } else {
-      console.error('Usage: node mini_watch.mjs login | run | ntfy-test | ntfy-check <id> | doctor [--offline]');
+      console.error('Usage: node mini_watch.mjs login | run | ntfy-test | ntfy-check <id> | pushover-test | doctor [--offline]');
       process.exit(2);
     }
   } catch (err) {

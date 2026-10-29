@@ -68,6 +68,8 @@ One notification lists all open parts. Parts with the same time share it. You ch
 
 More than one phone can get the notifications. Each phone subscribes to the same topic. See [More than one phone](docs/en/03-ntfy.md#more-than-one-phone).
 
+Optional: the program can send the notifications through Pushover instead of ntfy. One setting (`notify_service`) changes the service. ntfy stays the default. The steps on the phone are not tested yet. See [Pushover](docs/en/06-pushover.md).
+
 ## Limits
 
 - **Lock state only on some cars.** The tested car sends the central lock (`vehicle.cabin.door.status`). The program then knows when you lock the car and when the car drives. Without it, the program reacts to "parked and open" only.
@@ -83,7 +85,8 @@ More than one phone can get the notifications. Each phone subscribes to the same
 - `config.json` and `tokens.json` stay on your server. They are not in this repository.
 - `tokens.json` gives read access to your car account. Do not share it.
 - The ntfy topic name works like a password. Use a long random name.
-- Notifications go through the ntfy.sh server. The text has no location, plate number or VIN.
+- With Pushover, the token and the user key in `config.json` are secrets too.
+- Notifications go through the ntfy.sh server, or through Pushover when you select it. The text has no location, plate number or VIN.
 - The server accepts no incoming connection. SSH works only through the Google IAP tunnel.
 - You can delete all access in the MINI portal. Press "Delete stream" and "Delete Client".
 

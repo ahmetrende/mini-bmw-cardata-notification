@@ -208,7 +208,7 @@ Telefonuna bir deneme bildirimi yolla:
 sudo mini-watch ntfy-test
 ```
 
-"MINI deneme: Bildirim çalışıyor." bildirimi gelmeli. (`language` değeri `en` ise metin "MINI test: Notifications work." olur.)
+"MINI deneme bildirimi: Bildirim çalışıyor." bildirimi gelmeli. (`language` değeri `en` ise metin "MINI test: Notifications work." olur.)
 
 ## 9. Aracınla dene
 

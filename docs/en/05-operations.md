@@ -20,6 +20,7 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
 | Stop | `sudo systemctl stop mini-watch` |
 | Test notification | `sudo mini-watch ntfy-test` |
 | Check if ntfy still has a notification (sends nothing) | `sudo mini-watch ntfy-check <id>`. The message id is in the log line `Notification accepted by ntfy`. |
+| Test notification through Pushover (sends a real notification, also while `notify_service` is `ntfy`) | `sudo mini-watch pushover-test`. See [Pushover](06-pushover.md). |
 | Check the setup (sends nothing) | `sudo mini-watch doctor` |
 
 To watch the log from your computer with one command:
@@ -36,16 +37,19 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 | `Message: vehicle....` | Data arrived from the car. |
 | `Notification accepted by ntfy: ...` | ntfy accepted a notification. The line has the title, the text, the message id, the HTTP status, the time and the expiry time (UTC). The time and the expiry time show only when ntfy sends valid values. "Accepted" means that ntfy stored the message. It does not mean that the phone got it. ntfy gives no delivery confirmation. Older log lines say `Notification sent: ...`. They have no HTTP status, no time and no expiry time. To list all sent notifications: `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)"`. |
 | `Notification not confirmed: ...` | ntfy answered with HTTP 2xx, but the answer has no message id. The program does not count the notification as sent. It tries again later, as after `Notification failed`. If the line repeats, check `ntfy_server` in `config.json`. |
+| `Notification service: Pushover.` | The program started with `notify_service` set to `pushover`. With ntfy, this line does not show. See [Pushover](06-pushover.md). |
+| `Notification accepted by Pushover: ...` | Pushover accepted a notification. The line has the title, the text, the request id and the HTTP status. It is not a delivery confirmation. |
+| `Notification not confirmed by Pushover: ...` | Pushover answered with HTTP 2xx, but the answer has no request id. The program does not count the notification as sent. It tries again later, as after `Notification failed`. |
 | `The token expires soon. Refreshing it.` | The normal refresh. It happens each hour. |
 | `Reconnecting in 5 seconds.` | The connection closed. The program reconnects. You see this line each hour after a token refresh. |
 | `MQTT error: Keepalive timeout` | A network break. It is normal when rare. If it is frequent, check the network. |
 | `Could not refresh the token ...` | You must log in again. See below. |
-| `Notification failed: ...` | ntfy was not reachable, or it answered with an HTTP error. The first retry comes after about 30 seconds. The base wait doubles with each failure and stops at 10 minutes. The program adds a random change of up to 20 percent, so the longest wait is about 12 minutes. Before a retry, the program checks again if the notification is still necessary. The notification about missing car data waits a fixed 10 minutes. If the line repeats, check the topic name and the network. |
+| `Notification failed: ...` | ntfy was not reachable, or it answered with an HTTP error. The first retry comes after about 30 seconds. The base wait doubles with each failure and stops at 10 minutes. The program adds a random change of up to 20 percent, so the longest wait is about 12 minutes. Before a retry, the program checks again if the notification is still necessary. The notification about missing car data waits a fixed 10 minutes. With ntfy, if the line repeats, check the topic name and the network. With Pushover, the same retry rules apply. A network error then shows as `Notification failed: no answer from Pushover (...)` or `Notification failed: no answer from Pushover in 15 seconds`. If the line repeats with Pushover, check the keys and the connection with `sudo mini-watch doctor`. |
 | `Subscribe error: ... Reconnecting.` | The stream refused the subscription. The program connects again. If the line repeats, make sure that **CarData Stream** is on in the portal. |
 | `The history file is full. ...` | `messages.jsonl` reached 10 MB and became `messages.jsonl.1`. This is normal. |
 | `A stream message was skipped: ...` | The message was too large (more than 64 KB). The program did not store it. |
 | `Unknown value "..." for ...` | The car sent a value that the program does not know. The part keeps its last state. Please open an issue and add this line. |
-| `Set "ntfy_topic" ...` or `"..." must be a number of minutes ...` | The program did not start. A value in `config.json` is wrong. Correct it and restart the service. |
+| `Set "ntfy_topic" ...`, `Set "pushover_token" ...` or `"..." must be a number of minutes ...` | The program did not start. A value in `config.json` is wrong. Correct it and restart the service. |
 
 ## Change a setting
 
@@ -70,6 +74,9 @@ sudo systemctl restart mini-watch
 | `silence_alert_hours` | 0 (off) | One notification when the car sends no data for this many hours. The car sends nothing while it sleeps, so a long parked time also gives this notification. |
 | `vehicle_names` | `{}` | Names for the cars of an account with more than one car. Example: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | The address of your own ntfy server |
+| `notify_service` | `ntfy` | The service for all notifications: `ntfy` or `pushover`. See [Pushover](06-pushover.md). |
+| `pushover_token` | empty | The API token of your Pushover application (30 letters and digits). Secret. Only used with `pushover` and by `pushover-test`. |
+| `pushover_user` | empty | Your Pushover user key or a delivery group key (30 letters and digits). Secret. Only used with `pushover` and by `pushover-test`. |
 
 ## Update the program
 
@@ -158,5 +165,6 @@ To change the 7 days, change `7d` and `+7` in `deploy/mini-watch-log-clean.servi
    gcloud projects delete PROJECT_NAME
    ```
 3. Delete the ntfy subscription on your phone.
+4. If you use Pushover, delete the application on pushover.net.
 
 **Next step:** Read [How it works](01-how-it-works.md). This page is optional.

@@ -1,6 +1,7 @@
 {
   "client_id": "YOUR-CLIENT-ID-FROM-THE-PORTAL",
   "ntfy_topic": "YOUR-RANDOM-TOPIC-NAME",
+  "notify_service": "ntfy",
   "language": "en",
   "timezone": "",
   "alert_after_min": 10,

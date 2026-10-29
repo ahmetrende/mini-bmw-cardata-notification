@@ -89,7 +89,7 @@ ntfy.sh teslimatı garanti etmez. Program yalnız ntfy.sh'in mesajı kabul etti�
   3. Sunucuda `sudo mini-watch ntfy-check <id>` komutunu çalıştır.
   4. Sonuca bak. "found": ntfy mesajı tutuyor, yani kayıp ntfy'den sonra oldu. "missing": önbellek süresi doldu (varsayılan 12 saat) ya da ntfy mesajı hiç tutmadı. "unknown": kontrol bir sonuç vermedi. Kontroldeki mesaj kimliğini yok sayan bir ntfy sunucusu 64 KB'tan büyük bir yanıt yollayabilir. Bu durumda sonuç "unknown" olur.
 
-ntfy teslim onayı vermez. Kaybolan bir bildirim kabul edilemezse teslim onayı veren bir servis bir seçenektir. Örnek: Pushover, acil (emergency) öncelik ve alındı onayı (receipt) ile. Bu program o servisi desteklemez.
+ntfy teslim onayı vermez. Kaybolan bir bildirim kabul edilemezse teslim onayı veren bir servis bir seçenektir. Örnek: Pushover, acil (emergency) öncelik ve alındı onayı (receipt) ile. Bu program acil önceliği ve alındı onayını desteklemez. Bunlar olmadan, tüm bildirimleri ntfy yerine Pushover ile yollayabilir. Bkz. [Pushover](06-pushover.md).
 
 ## Telefon notları
 

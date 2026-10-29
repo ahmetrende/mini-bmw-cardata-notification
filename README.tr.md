@@ -68,6 +68,8 @@ Tek bildirim, açık olan tüm parçaları sıralar. Aynı saate sahip parçalar
 
 Bildirimler birden fazla telefona gelebilir. Her telefon aynı konuya abone olur. Bkz. [Birden fazla telefon](docs/tr/03-ntfy.md#birden-fazla-telefon).
 
+İsteğe bağlı: Program bildirimleri ntfy yerine Pushover ile de yollayabilir. Servisi tek bir ayar (`notify_service`) değiştirir. Varsayılan servis ntfy olarak kalır. Telefondaki adımlar henüz denenmedi. Bkz. [Pushover](docs/tr/06-pushover.md).
+
 ## Sınırlar
 
 - **Kilit durumu her araçta yok.** Test edilen araç merkezi kilit bilgisini (`vehicle.cabin.door.status`) yolluyor. Program böylece aracı kilitlediğini ve aracın yolda olduğunu anlar. Bu bilgi yoksa yalnızca "park edildi ve açık" durumuna bakar.
@@ -83,7 +85,8 @@ Bildirimler birden fazla telefona gelebilir. Her telefon aynı konuya abone olur
 - `config.json` ve `tokens.json` yalnızca sunucunda durur. Bu depoda yoktur.
 - `tokens.json`, araç hesabına okuma erişimi verir. Dosyayı kimseyle paylaşma.
 - ntfy konu adı parola gibi davranır. Uzun ve rastgele bir ad seç.
-- Bildirimler ntfy.sh sunucusundan geçer. Metinde konum, plaka ya da VIN yoktur.
+- Pushover kullanıyorsan `config.json` içindeki token ve kullanıcı anahtarı da gizlidir.
+- Bildirimler ntfy.sh sunucusundan ya da Pushover'ı seçersen Pushover'dan geçer. Metinde konum, plaka ya da VIN yoktur.
 - Sunucu dışarıdan gelen hiçbir bağlantıyı kabul etmez. SSH yalnızca Google IAP tüneliyle açılır.
 - Erişimi istediğin zaman kapatabilirsin. MINI portalında "Delete stream" ve "Delete Client" düğmelerine bas.
 

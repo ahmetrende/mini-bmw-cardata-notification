@@ -9,7 +9,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 ## Rules that always apply
 
 1. **Never ask for or type a password, a card number or a one-time code.** The person types them. If a login page asks for a password, stop and tell the person.
-2. **Never print a secret in the chat or in a log.** Secrets: `tokens.json`, the ID token, the access token, the refresh token. Treat the Client ID, the ntfy topic name, the VIN and the server IP address as private too. Do not put them in a commit.
+2. **Never print a secret in the chat or in a log.** Secrets: `tokens.json`, the ID token, the access token and the refresh token. The Pushover token (`pushover_token`) and the Pushover user key (`pushover_user`) are secrets too. Treat the Client ID, the ntfy topic name, the VIN and the server IP address as private too. Do not put them in a commit.
 3. **Never commit `config.json` or `tokens.json`.** `.gitignore` blocks them. Do not change that rule.
 4. **Ask before you do any of these:** create a billing account, link billing, create or delete a cloud resource, accept terms, or approve a permission. Name the cost and the effect in your question.
 5. **Do not accept terms for the person.** The person reads and accepts the Google terms and the MINI CarData terms.
@@ -27,6 +27,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Install the program | `04-server-setup`, part 6 | Runs `deploy/install.sh`, edits `config.json` | Gives the Client ID and the topic name |
 | Log in to the car account | `04-server-setup`, part 7 | Runs the `login` command, shows the code | Approves the code in the browser |
 | Start and test | `04-server-setup`, parts 8 and 9 | Starts the service, reads the log | Does the real test with the car |
+| Pushover instead of ntfy (optional, not yet tested on a phone) | `06-pushover` | Changes `notify_service`. Runs `pushover-test` only when the person asks. | Makes the account, installs the app, buys the license, writes the two keys in `config.json` |
 
 ## Checks that show you finished a step
 
@@ -40,6 +41,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Login | The log line "Login done. Granted scope:" has `cardata:streaming:read`. |
 | Service | The log shows "Connected to the stream." and "Subscribed: qos0". |
 | Notification | `sudo mini-watch ntfy-test` puts a message on the phone. The output shows `Notification accepted by ntfy` with the message id. |
+| Pushover (optional) | `sudo mini-watch pushover-test` puts a message on the phone. The output shows `Notification accepted by Pushover` with the request id. With `notify_service` set to `pushover`, `sudo mini-watch doctor` shows `Pushover accepted the token and the user key`. Not yet tested on a phone. |
 | Whole setup | `sudo mini-watch doctor` shows no `FAIL` line. It sends nothing. |
 | Car | After the car sends data, the log shows `Message: vehicle...` lines. |
 
@@ -50,6 +52,8 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **Do not reset the server with a hard reset** (`gcloud compute instances reset`, or the console **Reset** button). Files that you wrote a moment before can become empty. Use `sudo systemctl reboot`. Run `sync` after you copy files.
 - **One stream connection for each account.** A second copy of the program with the same account breaks both. Do not run the program on the person's own computer when the server runs it.
 - **A notification can be lost between ntfy.sh and the phone.** ntfy gives no delivery confirmation. The log line `Notification accepted by ntfy` has the message id (older log lines say `Notification sent`). Run `sudo mini-watch ntfy-check <id>` to see if ntfy still has the message. The ntfy cache keeps a message for 12 hours by default. "found" means that ntfy.sh has the message. Then the loss is outside the program. Do not change the code for it. "missing" and "unknown" give no proof. See `docs/en/03-ntfy.md`, "Lost notifications". Do not print the topic name. `ntfy-check` does not print it.
+- **Do not run `pushover-test` unasked.** It sends a real notification through Pushover, also while `notify_service` is `ntfy`. Ask the person first. The Pushover token and user key are secrets. The program does not print them, and you must not print them either. Pushover is not yet tested on a phone. See `docs/en/06-pushover.md`.
+- **Keep `ntfy_topic` in `config.json`, also with Pushover.** A rollback (`sudo bash deploy/install.sh --rollback`) to a release before Pushover ignores `notify_service`. That release sends through ntfy and does not start without `ntfy_topic`. With Pushover, `doctor` shows a `WARN` line when the topic is empty or not valid.
 - **Subscribe before you log in.** Turn on **CarData API**, wait 60 seconds, turn on **CarData Stream**, wait 60 seconds. Then run the `login` command. A login before the subscription gives a token without the stream scope.
 - **Do not press "Authenticate device" in the portal before the program shows a code.**
 - **The portal list page loses the old selection** if you open it from the address bar. Use the **Change data selection** button. The first press can fail. Press it again.
@@ -91,7 +95,9 @@ The free e2-micro server has a small CPU. Copy `/var/lib/mini-watch/messages.jso
 Bu dosya, projeyi kurmaya yardım eden bir yapay zeka aracı içindir. Kurulum rehberleri `docs/tr/` içinde.
 
 - Parola, kart numarası ve tek kullanımlık kodu asla sen yazma. Kullanıcı yazar.
-- Token, Client ID, konu adı, VIN ve IP adresini sohbete veya commit'e yazma.
+- Token, Pushover token'ı, Pushover kullanıcı anahtarı, Client ID, konu adı, VIN ve IP adresini sohbete veya commit'e yazma.
+- `pushover-test` gerçek bir bildirim yollar. Kullanıcı istemeden çalıştırma. Pushover henüz bir telefonda denenmedi.
+- Pushover seçiliyken de `ntfy_topic` ayarını silme. Pushover'dan önceki bir sürüme dönüş bu ayar olmadan başlamaz.
 - Ücret doğuran veya şart kabul eden bir işten önce kullanıcıya sor.
 - Güvenlik duvarındaki genel kuralları, IAP tünelini denemeden silme.
 - Sunucuyu sert sıfırlama. `sudo systemctl reboot` kullan.
