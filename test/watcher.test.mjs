@@ -1,12 +1,12 @@
 // Run with: npm test
 // These tests use fake car data. They do not call BMW or ntfy.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import {
   DEFAULT_CONFIG,
   Fleet,
@@ -41,7 +41,16 @@ const VIN_A = 'TESTVIN0000000001';
 const VIN_B = 'TESTVIN0000000002';
 // One line of messages.jsonl, as the program writes it.
 const line = (t, values, vin = VIN_A) => JSON.stringify({ t, payload: JSON.stringify({ vin, data: msg(values) }) });
-const tempDir = () => mkdtempSync(join(tmpdir(), 'mini-watch-test-'));
+// Temporary folders. They are deleted after the last test of this file.
+const tempDirs = [];
+const tempDir = () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mini-watch-test-'));
+  tempDirs.push(dir);
+  return dir;
+};
+after(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 // ntfy_topic is empty, so a notification goes to the log.
 const baseConfig = { ...DEFAULT_CONFIG, language: 'en', timezone: 'UTC', ntfy_topic: '' };
@@ -325,7 +334,11 @@ test('reminders 30 and 90 minutes after the first notification, then no more', a
 
 // ---- Failed notifications, unknown values, settings and history (static analysis findings F-01, F-03, F-04, F-06, F-13) ----
 
-// Replaces fetch with a fake ntfy server. `answers` is a list of HTTP status codes or 'throw'. The last answer repeats.
+// The answer of ntfy to an accepted message.
+const NTFY_ANSWER = JSON.stringify({ id: 'abc123def456', time: 1790000000, expires: 1790043200, event: 'message', topic: 'x' });
+
+// Replaces fetch with a fake ntfy server. `answers` is a list of HTTP status codes, 'throw', or { status, body }
+// for a special answer. A 2xx code answers with a valid ntfy message (with an id). The last answer repeats.
 async function withFakeNtfy(answers, fn) {
   const original = globalThis.fetch;
   const calls = [];
@@ -333,7 +346,8 @@ async function withFakeNtfy(answers, fn) {
     const answer = answers[Math.min(calls.length, answers.length - 1)];
     calls.push(JSON.parse(options.body));
     if (answer === 'throw') throw new Error('connection refused');
-    return { ok: answer >= 200 && answer < 300, status: answer };
+    if (typeof answer === 'object') return new Response(answer.body, { status: answer.status });
+    return new Response(answer >= 200 && answer < 300 ? NTFY_ANSWER : 'error', { status: answer });
   };
   try {
     await logsDuring(fn);
@@ -368,17 +382,86 @@ test('a failed notification is sent again later and the state waits for success'
   assert.equal(watcher.notifyFailures, 0);
 });
 
-test('no "everything is closed" when the alert never reached the phone', async () => {
+test('no "everything is closed" when the first alert failed with a network error (fetch threw) and the part closed', async () => {
   let clock = 1000;
   const watcher = new Watcher(ntfyConfig, { clock: () => clock, random: () => 0.5 });
   watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
   const calls = await withFakeNtfy(['throw', 200], async () => {
-    await watcher.check(); // the alert fails
+    await watcher.check(); // fetch throws: the alert is not sent
     watcher.onData(msg({ [WIN]: 'CLOSED' }), clock + 5);
     clock += 600;
     await watcher.check(); // everything is closed, but no alert went out
   });
   assert.equal(calls.length, 1, 'only the failed alert');
+});
+
+test('no "everything is closed" when the first alert got a 2xx answer without a message id and the part closed', async () => {
+  let clock = 1000;
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock, random: () => 0.5 });
+  watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
+  const calls = await withFakeNtfy([{ status: 200, body: '{}' }, 200], async () => {
+    await watcher.check(); // HTTP 200 without a message id: the alert is not confirmed
+    watcher.onData(msg({ [WIN]: 'CLOSED' }), clock + 5);
+    clock += 600;
+    await watcher.check(); // everything is closed, but ntfy accepted no alert
+  });
+  assert.equal(calls.length, 1, 'only the alert that was not confirmed');
+  assert.equal(watcher.alerted, false);
+});
+
+test('silence alert: after a failed send and after a 2xx answer without a message id, the next try comes after a fixed 600 seconds', async () => {
+  let clock = 0;
+  const fleet = new Fleet({ ...ntfyConfig, silence_alert_hours: 48 }, { clock: () => clock, random: () => 0.5 });
+  fleet.onMessage(VIN_A, msg({ [WIN]: 'CLOSED' }), 0);
+  const start = 49 * 3600;
+  const calls = await withFakeNtfy(['throw', { status: 200, body: '{}' }, 200], async () => {
+    clock = start;
+    await fleet.check(); // fetch throws
+    assert.equal(fleet.silenceAlerted, false);
+    assert.equal(fleet.silenceRetryAt, start + 600);
+    clock = start + 599;
+    await fleet.check(); // still in the wait: no try
+    clock = start + 600;
+    await fleet.check(); // HTTP 200 without a message id
+    assert.equal(fleet.silenceAlerted, false, 'not confirmed');
+    assert.equal(fleet.silenceRetryAt, start + 1200, 'the same fixed wait: no doubling and no random factor');
+    clock = start + 1199;
+    await fleet.check(); // still in the wait: no try
+    clock = start + 1200;
+    await fleet.check(); // HTTP 200 with a message id
+    clock = start + 3 * 3600;
+    await fleet.check(); // sent once: no more
+  });
+  assert.equal(calls.length, 3);
+  assert.ok(
+    calls.every((call) => call.title === 'MINI no data'),
+    calls.map((call) => call.title).join(', '),
+  );
+  assert.equal(fleet.silenceAlerted, true);
+});
+
+test('a 2xx answer without a message id does not count as sent: the state waits and the alert comes again after the retry wait', async () => {
+  let clock = 1000;
+  const watcher = new Watcher(ntfyConfig, { clock: () => clock, random: () => 0.5 });
+  watcher.onData(msg({ [WIN]: 'OPEN' }), clock);
+  const calls = await withFakeNtfy([{ status: 200, body: '{}' }, 200], async () => {
+    await watcher.check(); // HTTP 200, but no message id
+    assert.equal(watcher.alerted, false, 'no alert is recorded');
+    assert.equal(watcher.notified.size, 0);
+    assert.equal(watcher.firstNotifyAt, 0);
+    assert.equal(watcher.lastNotify, 0);
+    assert.equal(watcher.notifyFailures, 1);
+    assert.equal(watcher.retryAt, 1030, 'the first wait is 30 seconds (random factor 1.0)');
+    clock += 29;
+    await watcher.check(); // still in the wait: no try
+    clock += 1;
+    await watcher.check(); // HTTP 200 with a message id
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].title, 'MINI: a part is open', 'the retry is the first alert, not a reminder');
+  assert.equal(watcher.alerted, true);
+  assert.equal(watcher.notifyFailures, 0);
+  assert.deepEqual([...watcher.notified], [WIN]);
 });
 
 test('"everything is closed" is sent again when it fails', async () => {
@@ -449,7 +532,7 @@ test('checkConfig refuses a bad number of minutes', () => {
 
 test('the history replay skips broken lines and keeps the others', async () => {
   const clock = 100_000;
-  const file = join(mkdtempSync(join(tmpdir(), 'mini-watch-test-')), 'messages.jsonl');
+  const file = join(tempDir(), 'messages.jsonl');
   writeFileSync(
     file,
     [
@@ -1796,7 +1879,7 @@ test('details: the odometer after the lock left LOCKED extends the drive', async
   assert.match(sent[0][1], /\(drive 14 min\)$/, 'from minute 2 to the unlock at minute 16');
 });
 
-test('log: the line of a sent notification has the title, the text and the ntfy id', async () => {
+test('log: the line of an accepted notification has the title, the text, the ntfy id and the HTTP status', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ id: 'abc123XYZ', time: 1, event: 'message', topic: 'x' }), { status: 200 });
   let lines;
@@ -1807,7 +1890,7 @@ test('log: the line of a sent notification has the title, the text and the ntfy 
   } finally {
     globalThis.fetch = original;
   }
-  assert.deepEqual(lines, ['Notification sent: MINI kilitlendi: Her şey kapalı. (ntfy id abc123XYZ)']);
+  assert.deepEqual(lines, ['Notification accepted by ntfy: MINI kilitlendi: Her şey kapalı. (ntfy id abc123XYZ, HTTP 200, time 1970-01-01T00:00:01.000Z)']);
 });
 
 test('log: a failed notification names the reason', async () => {

@@ -74,7 +74,7 @@ More than one phone can get the notifications. Each phone subscribes to the same
 - **No ignition or speed data** on the tested car. The program finds driving from the odometer and the lock.
 - **Without a lock, the notification comes 10 minutes after the driver door opens.** After a drive starts, the first odometer value comes in 3 to 7 minutes. A shorter wait gives false notifications at the start of a drive.
 - **A long stop without the driver door opening** (30 minutes or more) counts as parked.
-- **No delivery guarantee.** ntfy.sh can lose a notification (about 1 in 20 in the tested setup). See [Lost notifications](docs/en/03-ntfy.md#lost-notifications).
+- **No delivery guarantee.** A notification can be lost between ntfy.sh and the phone. ntfy gives no delivery confirmation. In the author's setup, 4 notifications did not appear on the author's phone in 19 days. This is the author's report of one setup. It is not a general loss rate. See [Lost notifications](docs/en/03-ntfy.md#lost-notifications).
 - **One connection for each account.** Do not run the program twice with the same account.
 - **BMW can change the service.** The program can stop working without notice.
 

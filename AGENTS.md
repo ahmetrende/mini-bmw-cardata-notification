@@ -39,7 +39,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Log clean-up | `sudo systemctl list-timers mini-watch-log-clean.timer` shows the next run at 05:00 (server time). |
 | Login | The log line "Login done. Granted scope:" has `cardata:streaming:read`. |
 | Service | The log shows "Connected to the stream." and "Subscribed: qos0". |
-| Notification | `sudo mini-watch ntfy-test` puts a message on the phone. |
+| Notification | `sudo mini-watch ntfy-test` puts a message on the phone. The output shows `Notification accepted by ntfy` with the message id. |
 | Whole setup | `sudo mini-watch doctor` shows no `FAIL` line. It sends nothing. |
 | Car | After the car sends data, the log shows `Message: vehicle...` lines. |
 
@@ -49,14 +49,14 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **A small server can stop to answer when its memory is full.** On 2026-10-07 an old memory leak and a replay on the server filled the 953 MB of an e2-micro server. SSH did not answer. The service now has `MemoryMax=250M` and `install.sh` adds a 1 GB swap file. Still, run long tools on another computer.
 - **Do not reset the server with a hard reset** (`gcloud compute instances reset`, or the console **Reset** button). Files that you wrote a moment before can become empty. Use `sudo systemctl reboot`. Run `sync` after you copy files.
 - **One stream connection for each account.** A second copy of the program with the same account breaks both. Do not run the program on the person's own computer when the server runs it.
-- **A notification can be lost between ntfy.sh and the phone.** The log line "Notification sent" and the ntfy cache (`https://ntfy.sh/<topic>/json?poll=1&since=12h`) show that ntfy.sh has the message. Then the loss is outside the program. Do not change the code for it. See `docs/en/03-ntfy.md`, "Lost notifications". Do not print the topic name.
+- **A notification can be lost between ntfy.sh and the phone.** ntfy gives no delivery confirmation. The log line `Notification accepted by ntfy` has the message id (older log lines say `Notification sent`). Run `sudo mini-watch ntfy-check <id>` to see if ntfy still has the message. The ntfy cache keeps a message for 12 hours by default. "found" means that ntfy.sh has the message. Then the loss is outside the program. Do not change the code for it. "missing" and "unknown" give no proof. See `docs/en/03-ntfy.md`, "Lost notifications". Do not print the topic name. `ntfy-check` does not print it.
 - **Subscribe before you log in.** Turn on **CarData API**, wait 60 seconds, turn on **CarData Stream**, wait 60 seconds. Then run the `login` command. A login before the subscription gives a token without the stream scope.
 - **Do not press "Authenticate device" in the portal before the program shows a code.**
 - **The portal list page loses the old selection** if you open it from the address bar. Use the **Change data selection** button. The first press can fail. Press it again.
 - **macOS system Python cannot connect to the stream.** The broker needs TLS 1.3. This project uses Node 22 or newer.
 - **A restart can send a wrong notification.** After a restart, an empty list of open parts can mean "no data yet". The program handles this. Still, before you restart a running server, do a dry run (see below).
 - **The car sends data only when something changes.** An asleep car sends nothing. A remote light signal or an open and close of a door wakes the data.
-- **Server paths.** The code is in `/opt/mini-watch/releases/<date>-<commit>` and belongs to root. `/opt/mini-watch/current` points to the release in use. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. The timer `mini-watch-log-clean.timer` deletes logs older than 7 days every night at 05:00 (server time). `install.sh` installs it. Use `sudo mini-watch login`, `sudo mini-watch ntfy-test` and `sudo mini-watch doctor`. Do not start a second copy with `run`.
+- **Server paths.** The code is in `/opt/mini-watch/releases/<date>-<commit>` and belongs to root. `/opt/mini-watch/current` points to the release in use. Settings and data are in `/var/lib/mini-watch` (mode 0700, user `miniwatch`). The log is in the system journal: `sudo journalctl -u mini-watch`. The timer `mini-watch-log-clean.timer` deletes logs older than 7 days every night at 05:00 (server time). `install.sh` installs it. Use `sudo mini-watch login`, `sudo mini-watch ntfy-test`, `sudo mini-watch ntfy-check <id>` and `sudo mini-watch doctor`. Do not start a second copy with `run`.
 - **Update and rollback.** `sudo bash deploy/install.sh` checks the new release, switches, and waits for `Subscribed`. Without it, the script goes back to the release before. `sudo bash deploy/install.sh --rollback` goes back by hand.
 - **The tested car (MINI Countryman E, U25) sends no ignition, motion or speed data.** It sends the central lock (`vehicle.cabin.door.status`: `UNLOCKED`, `LOCKED` while it drives, `SECURED` after a lock from outside). It does not send `alarm.armStatus`. It sends the plug (`vehicle.body.chargingPort.status`: `CONNECTED`, `DISCONNECTED`) and the charging status (`vehicle.drivetrain.electricEngine.charging.status`: `INITIALIZATION`, `CHARGINGACTIVE`, `NOCHARGING`). It does not send `charging.connectorStatus` or `charging.hvStatus`. A window has only the states `CLOSED`, `INTERMEDIATE` and `OPEN` (no percent). The car does not send `vehicle.cabin.sunroof.relativePosition`. The door position attributes (`vehicle.cabin.door.rowX.Y.position`) were added on 2026-10-29. It is not yet known if the car sends them. Do not promise more. Another car can differ.
 
@@ -96,6 +96,7 @@ Bu dosya, projeyi kurmaya yardım eden bir yapay zeka aracı içindir. Kurulum r
 - Güvenlik duvarındaki genel kuralları, IAP tünelini denemeden silme.
 - Sunucuyu sert sıfırlama. `sudo systemctl reboot` kullan.
 - Aynı MINI hesabıyla programı iki yerde çalıştırma.
+- Bir bildirim telefona gelmezse log'daki mesaj kimliğiyle `sudo mini-watch ntfy-check <id>` komutunu çalıştır. Konu adını yazdırma.
 - Çalışan sunucuyu yeniden başlatmadan önce `tools/replay.mjs` ile hangi bildirimlerin gideceğini gör. Bunu sunucuda değil, başka bir bilgisayarda yap.
 - `install.sh`, 7 günden eski log'u her gece 05:00'te (sunucu saati) silen `mini-watch-log-clean.timer` dosyasını kurar.
 - Ülke adını "Türkiye" yaz.

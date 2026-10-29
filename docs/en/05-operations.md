@@ -15,10 +15,11 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
 | Status | `systemctl status mini-watch --no-pager` |
 | Live log | `sudo journalctl -u mini-watch -f` |
 | Log without message lines | `sudo journalctl -u mini-watch -n 500 --no-pager \| grep -v "Message:" \| tail -30` |
-| Sent notifications | `sudo journalctl -u mini-watch --no-pager \| grep "Notification" \| tail -20` |
+| Sent notifications | `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)" \| tail -20` |
 | Restart | `sudo systemctl restart mini-watch` |
 | Stop | `sudo systemctl stop mini-watch` |
 | Test notification | `sudo mini-watch ntfy-test` |
+| Check if ntfy still has a notification (sends nothing) | `sudo mini-watch ntfy-check <id>`. The message id is in the log line `Notification accepted by ntfy`. |
 | Check the setup (sends nothing) | `sudo mini-watch doctor` |
 
 To watch the log from your computer with one command:
@@ -33,12 +34,13 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 |---|---|
 | `Connected to the stream.` and `Subscribed: qos0` | The connection is good. |
 | `Message: vehicle....` | Data arrived from the car. |
-| `Notification sent: ...` | ntfy accepted a notification. The line has the title, the text and the ntfy message id. ntfy does not tell whether the phone received it. To list all sent notifications: `sudo journalctl -u mini-watch --no-pager \| grep "Notification"`. |
+| `Notification accepted by ntfy: ...` | ntfy accepted a notification. The line has the title, the text, the message id, the HTTP status, the time and the expiry time (UTC). The time and the expiry time show only when ntfy sends valid values. "Accepted" means that ntfy stored the message. It does not mean that the phone got it. ntfy gives no delivery confirmation. Older log lines say `Notification sent: ...`. They have no HTTP status, no time and no expiry time. To list all sent notifications: `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)"`. |
+| `Notification not confirmed: ...` | ntfy answered with HTTP 2xx, but the answer has no message id. The program does not count the notification as sent. It tries again later, as after `Notification failed`. If the line repeats, check `ntfy_server` in `config.json`. |
 | `The token expires soon. Refreshing it.` | The normal refresh. It happens each hour. |
 | `Reconnecting in 5 seconds.` | The connection closed. The program reconnects. You see this line each hour after a token refresh. |
 | `MQTT error: Keepalive timeout` | A network break. It is normal when rare. If it is frequent, check the network. |
 | `Could not refresh the token ...` | You must log in again. See below. |
-| `Notification failed: ...` | ntfy was not reachable. The program tries again after 30 seconds, then waits longer each time, up to 10 minutes. If the line repeats, check the topic name and the network. |
+| `Notification failed: ...` | ntfy was not reachable, or it answered with an HTTP error. The first retry comes after about 30 seconds. The base wait doubles with each failure and stops at 10 minutes. The program adds a random change of up to 20 percent, so the longest wait is about 12 minutes. Before a retry, the program checks again if the notification is still necessary. The notification about missing car data waits a fixed 10 minutes. If the line repeats, check the topic name and the network. |
 | `Subscribe error: ... Reconnecting.` | The stream refused the subscription. The program connects again. If the line repeats, make sure that **CarData Stream** is on in the portal. |
 | `The history file is full. ...` | `messages.jsonl` reached 10 MB and became `messages.jsonl.1`. This is normal. |
 | `A stream message was skipped: ...` | The message was too large (more than 64 KB). The program did not store it. |
@@ -122,7 +124,7 @@ For the login steps, see [Step 3](04-server-setup.md), part 7.
 | A notification comes while you drive | The stream has no `travelledDistance`. | Add that attribute in the portal. |
 | No notification for a tilted sunroof | The stream has no `tiltStatus`. | Add that attribute in the portal. |
 | The time in the notification is wrong | `timezone` is empty or wrong. | Write your time zone in `config.json`. Example: `Europe/Istanbul`. |
-| The log shows "Notification sent", but the phone shows nothing | No subscription, or notifications are off. | Check the topic name and the phone permissions in the ntfy app. |
+| The log shows "Notification accepted by ntfy", but the phone shows nothing | No subscription, notifications are off, or the push did not reach the phone. | Check the topic name and the phone permissions in the ntfy app. Then follow [Lost notifications](03-ntfy.md#lost-notifications). |
 | SSH shows "Connection timed out" | The `--tunnel-through-iap` flag is missing. | Add the flag. The server accepts only the IAP tunnel. |
 | SSH does not answer, the flag is there | The memory of the server is full. | Wait 5 minutes. Then stop and start the server: `gcloud compute instances stop` and `start`. Do not use `reset`. Do not run `tools/replay.mjs` on the server. |
 

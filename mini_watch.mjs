@@ -5,6 +5,7 @@
 //   node mini_watch.mjs login             # once: get a device code, approve it in the browser
 //   node mini_watch.mjs run               # listen to the stream (runs forever)
 //   node mini_watch.mjs ntfy-test         # send a test notification to the phone
+//   node mini_watch.mjs ntfy-check <id>   # ask ntfy if its cache still has the message with this id. Sends nothing.
 //   node mini_watch.mjs doctor [--offline] # check the settings, files and connections. Sends nothing.
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -54,7 +55,11 @@ const HTTP_TIMEOUT_MS = 15_000;
 const MAX_HTTP_BODY_BYTES = 64 * 1024;
 const MAX_PAYLOAD_BYTES = 64 * 1024; // A stream message has about 300 bytes. A larger one is not stored.
 const HISTORY_MAX_BYTES = 10 * 1024 * 1024; // At this size messages.jsonl becomes messages.jsonl.1. Two files at most.
-const NOTIFY_RETRY_MIN_S = 30; // After a failed notification, try again after about 30, 60, 120 ... seconds.
+// After a failed notification, the base wait is 30 seconds. It doubles with each failure in a row
+// (30, 60, 120, 240, 480 seconds) and stops at NOTIFY_RETRY_MAX_S (10 minutes). notifyResult multiplies
+// it by a random factor from 0.8 to 1.2, so the longest wait is about 12 minutes.
+const NOTIFY_RETRY_MIN_S = 30;
+// The longest base wait. The notification about missing car data (silence) waits this fixed time after a failure.
 const NOTIFY_RETRY_MAX_S = 600;
 const STATE_VERSION = 2;
 const SAVE_EVERY_S = 60; // Save the open parts at most once a minute. Save at once after a notification.
@@ -348,8 +353,18 @@ export function checkConfig(cfg) {
     throw new Error('"vehicle_names" must look like {"VIN": "name"}.');
   }
   if (!/^https?:\/\/[^\s/]+/.test(String(cfg.ntfy_server))) {
-    throw new Error(`"ntfy_server" must be an address like "https://ntfy.sh". Now it is ${JSON.stringify(cfg.ntfy_server)}.`);
+    // The text does not show the value: it can contain a user name and a password.
+    throw new Error('"ntfy_server" must be an address like "https://ntfy.sh". Now it is not valid.');
   }
+  // fetch cannot use an address with a user name or a password, and its error text would show it in the log.
+  let serverUrl = null;
+  try {
+    serverUrl = new URL(String(cfg.ntfy_server));
+  } catch {
+    // The check above accepted the start of the value. The next line refuses it when the value is not an address.
+  }
+  if (!serverUrl) throw new Error('"ntfy_server" must be an address like "https://ntfy.sh". Now it is not valid.');
+  if (serverUrl.username || serverUrl.password) throw new Error('"ntfy_server" must not have a user name or a password. The program does not use them.');
   const known = new Set([...Object.keys(DEFAULT_CONFIG), 'client_id']);
   const unknown = Object.keys(cfg).filter((key) => !known.has(key));
   if (unknown.length) log(`Warning: config.json has unknown settings: ${unknown.join(', ')}. The program ignores them.`);
@@ -357,7 +372,16 @@ export function checkConfig(cfg) {
 }
 
 function loadConfig() {
-  return checkConfig({ ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(CONFIG, 'utf8')) });
+  let saved;
+  try {
+    saved = JSON.parse(readFileSync(CONFIG, 'utf8'));
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err;
+    // The error text of JSON.parse can show a part of the file, for example the topic name. Show only the place.
+    const place = err.message.match(/\(line \d+ column \d+\)/)?.[0];
+    throw new Error(`${CONFIG} is not valid JSON${place ? ` ${place}` : ''}. Check the quotes and the commas.`);
+  }
+  return checkConfig({ ...DEFAULT_CONFIG, ...saved });
 }
 
 function requireClientId(cfg) {
@@ -377,13 +401,14 @@ export function checkTopic(cfg) {
   }
 }
 
-// Reads an HTTP answer, but not more than `limit` bytes. A larger answer is an error.
+// Reads an HTTP answer, but not more than `limit` bytes. A larger answer is an error with the code BODY_TOO_LARGE.
+const BODY_TOO_LARGE = 'BODY_TOO_LARGE';
 export async function readBody(resp, limit = MAX_HTTP_BODY_BYTES) {
   const chunks = [];
   let size = 0;
   for await (const chunk of resp.body ?? []) {
     size += chunk.length;
-    if (size > limit) throw new Error(`The answer is larger than ${limit} bytes.`);
+    if (size > limit) throw Object.assign(new Error(`The answer is larger than ${limit} bytes.`), { code: BODY_TOO_LARGE });
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString('utf8');
@@ -485,11 +510,33 @@ async function getTokens(cfg) {
 
 const NTFY_PRIORITY = { default: 3, high: 4 };
 
-// A title in an HTTP header fails for letters outside Latin-1. A JSON body carries UTF-8.
-// Returns true only when ntfy accepted the message (HTTP 2xx). An empty topic prints the text and returns true.
 // The tag (emoji) of a kind of notification: open, still_open, closed, locked, silence or test.
 export const tagFor = (cfg, kind) => cfg.ntfy_tags?.[kind] ?? DEFAULT_CONFIG.ntfy_tags[kind];
 
+// An ntfy time (seconds since 1970) as ISO text in UTC, or '' when the value is not a usable number.
+function ntfyTime(seconds) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return '';
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+// A message of ntfy: a JSON object with a non-empty string id. Other values give null.
+function ntfyMessage(value) {
+  const isObject = value !== null && typeof value === 'object' && !Array.isArray(value);
+  return isObject && typeof value.id === 'string' && value.id !== '' ? value : null;
+}
+
+// Text from an answer of ntfy for one log line: control characters (also line breaks) become `replacement`.
+// A line break in a value cannot split the log line.
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+const oneLine = (text, replacement = '') => String(text).replace(CONTROL_CHARS, replacement).trim();
+
+// Sends one notification. A title in an HTTP header fails for letters outside Latin-1. A JSON body carries UTF-8.
+// Returns true only when ntfy accepted the message: HTTP 2xx and an answer with a message id. Then the program
+// counts the notification as sent. ntfy gives no delivery confirmation: the program cannot see if a phone got it.
+// A 2xx answer without a message id is not a confirmation. It returns false, so the retry runs. A second
+// notification on the phone is a smaller risk than a lost one. An empty topic prints the text and returns true.
+// The log never shows the topic name.
 export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning') {
   if (!cfg.ntfy_topic) {
     log(`[ntfy off] ${title}: ${text}`);
@@ -508,20 +555,135 @@ export async function ntfy(cfg, title, text, priority = 'high', tags = 'warning'
       }),
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
-    // The answer of ntfy has the id of the message. The log keeps it, so a message can be found in the ntfy app
-    // and in the cache of ntfy (https://ntfy.sh/<topic>/json?poll=1&since=12h).
-    let id = '';
-    try {
-      id = String(JSON.parse(await readBody(resp)).id ?? '');
-    } catch {
+    if (!resp.ok) {
       await resp.body?.cancel?.();
+      log(`Notification failed: HTTP ${resp.status}`);
+      return false;
     }
-    log(resp.ok ? `Notification sent: ${title}: ${text}${id ? ` (ntfy id ${id})` : ''}` : `Notification failed: HTTP ${resp.status}`);
-    return resp.ok;
+    // The answer of ntfy is the stored message: id, time and expires (seconds since 1970). The log keeps the id,
+    // so "ntfy-check <id>" can find the message in the cache of ntfy.
+    let message = null;
+    try {
+      message = ntfyMessage(JSON.parse(await readBody(resp)));
+    } catch {
+      message = null; // The answer cannot be read, is too large or is not JSON.
+    }
+    if (!message) {
+      log(`Notification not confirmed: HTTP ${resp.status}, the answer of ntfy has no message id`);
+      return false;
+    }
+    const time = ntfyTime(message.time);
+    const expires = ntfyTime(message.expires);
+    // Any non-empty id counts as accepted. Only the log text drops control characters from it.
+    const shownId = oneLine(message.id) || '(not printable)';
+    const fields = [`ntfy id ${shownId}`, `HTTP ${resp.status}`, ...(time ? [`time ${time}`] : []), ...(expires ? [`expires ${expires}`] : [])];
+    log(`Notification accepted by ntfy: ${title}: ${text} (${fields.join(', ')})`);
+    return true;
   } catch (err) {
     log(`Notification failed: ${err.message}`);
     return false;
   }
+}
+
+// The id of an ntfy message, as the log line "Notification accepted by ntfy" shows it.
+const NTFY_ID = /^[A-Za-z0-9_-]{6,64}$/;
+
+// Replaces the topic name in a text with "<topic>".
+function hideTopic(cfg, text) {
+  const topic = String(cfg.ntfy_topic ?? '');
+  return [topic, encodeURIComponent(topic)].filter(Boolean).reduce((result, secret) => result.split(secret).join('<topic>'), String(text));
+}
+
+// Asks ntfy one time if its cache still has the message with this id. It sends no notification.
+// Returns { status, detail, message }. status: 'found' (ntfy has the message now), 'missing' (ntfy answered,
+// but it does not have the message now) or 'unknown' (no conclusion is possible). An invalid id gives 'unknown'
+// without a request. The detail never has the address, the topic name, the server path or an error text.
+export async function checkNtfyMessage(cfg, id) {
+  if (typeof id !== 'string' || !NTFY_ID.test(id)) {
+    return {
+      status: 'unknown',
+      detail: 'The message id is not valid. Use the id from the log line "Notification accepted by ntfy" (6 to 64 letters, digits, "_" or "-").',
+    };
+  }
+  const topic = String(cfg.ntfy_topic ?? '');
+  let url;
+  try {
+    url = new URL(`${String(cfg.ntfy_server).replace(/\/+$/, '')}/${encodeURIComponent(topic)}/json?poll=1&id=${id}`);
+  } catch {
+    return { status: 'unknown', detail: 'The check did not start: "ntfy_server" in config.json is not a valid address.' };
+  }
+  let resp;
+  let body;
+  try {
+    resp = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
+    if (resp.status !== 200) await resp.body?.cancel?.();
+    else body = await readBody(resp);
+  } catch (err) {
+    // An error text can contain the address with a user name and a password, and the topic. So the detail
+    // has only a fixed text and the error code, a name with letters, digits and "_" only.
+    let reason;
+    if (err?.name === 'TimeoutError') reason = `no answer in ${HTTP_TIMEOUT_MS / 1000} seconds`;
+    else if (err?.code === BODY_TOO_LARGE) reason = `the answer of ntfy is larger than ${MAX_HTTP_BODY_BYTES / 1024} KB`;
+    else {
+      // A real code is a fixed name like ENOTFOUND or TypeError. Anything else shows as "Error".
+      const raw = hideTopic(cfg, String(err?.cause?.code ?? err?.name ?? ''));
+      reason = `no answer from ntfy (${/^[A-Za-z][A-Za-z0-9_]{1,39}$/.test(raw) ? raw : 'Error'})`;
+    }
+    return { status: 'unknown', detail: `The check did not finish: ${reason}.` };
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    return { status: 'unknown', detail: `ntfy refused the check: HTTP ${resp.status}. The program has no permission to read the topic.` };
+  }
+  if (resp.status === 429) {
+    return { status: 'unknown', detail: 'ntfy refused the check: HTTP 429. Too many requests. Try again later.' };
+  }
+  if (resp.status !== 200) {
+    return { status: 'unknown', detail: `The check did not finish: ntfy answered HTTP ${resp.status}.` };
+  }
+  // The answer has one JSON object on each line. An empty answer means: no message. A line that is not
+  // a JSON object is not an answer of ntfy, so no conclusion is possible.
+  const lines = body.split('\n').filter((text) => text.trim() !== '');
+  const values = [];
+  for (const text of lines) {
+    try {
+      values.push(JSON.parse(text));
+    } catch {
+      values.push(null);
+    }
+  }
+  if (values.some((value) => value === null || typeof value !== 'object' || Array.isArray(value))) {
+    return { status: 'unknown', detail: 'The check did not finish: the answer of ntfy is not one JSON object on each line.' };
+  }
+  // An older ntfy can ignore the id filter. So look for the id in each message.
+  const message = values.find((value) => value.event === 'message' && value.id === id);
+  if (message) return { status: 'found', detail: `ntfy has the message ${id}.`, message };
+  return {
+    status: 'missing',
+    detail: 'ntfy does not have this message now. The cache keeps messages for 12 hours by default. A message that is older is gone.',
+  };
+}
+
+// The command "ntfy-check <id>". Prints the result and returns the exit code: 0 found, 1 missing, 2 unknown.
+export async function ntfyCheck(cfg, id) {
+  const result = await checkNtfyMessage(cfg, id);
+  log(`Result: ${result.status}. ${result.detail}`);
+  if (result.status === 'found') {
+    const { message } = result;
+    // The title and the text come from the answer of ntfy: one line each, and without the topic name.
+    const shown = (value) => {
+      const text = typeof value === 'string' ? oneLine(value, ' ') : '';
+      return text ? hideTopic(cfg, text) : '(none)';
+    };
+    log(`Title: ${shown(message.title)}`);
+    log(`Text: ${shown(message.message)}`);
+    log(`Time: ${ntfyTime(message.time) || 'unknown'}`);
+    log(`Expires: ${ntfyTime(message.expires) || 'unknown'}`);
+    log('ntfy kept the message. ntfy gives no delivery confirmation, so this does not show that a phone got it.');
+    return 0;
+  }
+  if (result.status === 'missing') return 1;
+  log('No conclusion about the message is possible.');
+  return 2;
 }
 
 export function label(name, cfg = {}) {
@@ -973,8 +1135,11 @@ export class Watcher {
     }
   }
 
-  // A failed notification does not change the state. The next check sends it again, after a wait
-  // that doubles each time: about 30 seconds up to 10 minutes. A random part of +-20 % spreads the tries.
+  // A failed notification (ntfy not reachable, an HTTP error, or a 2xx answer without a message id) does not
+  // change the state. The first check after the wait decides again if the notification is still needed: a part
+  // that closed needs no alert, and a lock confirmation is only sent within 10 minutes of the lock.
+  // The base wait is 30 seconds. It doubles with each failure in a row and stops at 10 minutes. A random factor
+  // from 0.8 to 1.2 spreads the tries, so the longest wait is about 12 minutes.
   notifyResult(ok) {
     if (ok) {
       this.notifyFailures = 0;
@@ -1176,7 +1341,7 @@ export class Fleet {
       this.silenceAlerted = true;
       this.dirty = true;
     } else {
-      this.silenceRetryAt = this.clock() + NOTIFY_RETRY_MAX_S;
+      this.silenceRetryAt = this.clock() + NOTIFY_RETRY_MAX_S; // A fixed wait of 10 minutes, without doubling or random change.
     }
   }
 
@@ -1549,7 +1714,7 @@ async function main() {
   try {
     const cfg = loadConfig();
     if (command === 'login' || command === 'run') requireClientId(cfg);
-    if (command === 'run' || command === 'ntfy-test') checkTopic(cfg);
+    if (command === 'run' || command === 'ntfy-test' || command === 'ntfy-check') checkTopic(cfg);
     if (command === 'run' && !existsSync(TOKENS)) {
       throw new Error(`${TOKENS} not found. Run the "login" command first (docs/en/04-server-setup.md, part 7).`);
     }
@@ -1558,13 +1723,16 @@ async function main() {
     else if (command === 'ntfy-test') {
       const t = textFor(cfg);
       process.exit((await ntfy(cfg, t.testTitle, t.testBody, 'default', tagFor(cfg, 'test'))) ? 0 : 1);
+    } else if (command === 'ntfy-check') {
+      process.exit(await ntfyCheck(cfg, process.argv[3]));
     } else {
-      console.error('Usage: node mini_watch.mjs login | run | ntfy-test | doctor [--offline]');
+      console.error('Usage: node mini_watch.mjs login | run | ntfy-test | ntfy-check <id> | doctor [--offline]');
       process.exit(2);
     }
   } catch (err) {
     console.error(err.message);
-    process.exit(1);
+    // For ntfy-check, exit code 1 means "missing". An error there gives no conclusion: exit code 2.
+    process.exit(command === 'ntfy-check' ? 2 : 1);
   }
 }
 

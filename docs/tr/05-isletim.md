@@ -15,10 +15,11 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap
 | Durumu görmek | `systemctl status mini-watch --no-pager` |
 | Log'u canlı izlemek | `sudo journalctl -u mini-watch -f` |
 | Mesaj satırları olmadan log görmek | `sudo journalctl -u mini-watch -n 500 --no-pager \| grep -v "Message:" \| tail -30` |
-| Yollanan bildirimleri görmek | `sudo journalctl -u mini-watch --no-pager \| grep "Notification" \| tail -20` |
+| Yollanan bildirimleri görmek | `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)" \| tail -20` |
 | Yeniden başlatmak | `sudo systemctl restart mini-watch` |
 | Durdurmak | `sudo systemctl stop mini-watch` |
 | Deneme bildirimi yollamak | `sudo mini-watch ntfy-test` |
+| ntfy'de bir bildirimin hala durup durmadığını görmek (bir şey yollamaz) | `sudo mini-watch ntfy-check <id>`. Mesaj kimliği `Notification accepted by ntfy` log satırında yazar. |
 | Kurulumu kontrol etmek (bir şey yollamaz) | `sudo mini-watch doctor` |
 
 Log'u bilgisayarından tek komutla izlemek için:
@@ -35,12 +36,13 @@ Log satırları her zaman İngilizce yazılır. Yalnızca bildirim metni `langua
 |---|---|
 | `Connected to the stream.` ve `Subscribed: qos0` | Bağlantı sağlıklı. |
 | `Message: vehicle....` | Araçtan veri geldi. |
-| `Notification sent: ...` | ntfy bildirimi kabul etti. Satırda başlık, metin ve ntfy mesaj numarası var. Telefonun bildirimi alıp almadığını ntfy söylemez. Yollanan tüm bildirimleri listelemek için: `sudo journalctl -u mini-watch --no-pager \| grep "Notification"`. |
+| `Notification accepted by ntfy: ...` | ntfy bildirimi kabul etti. Satırda başlık, metin, mesaj kimliği, HTTP durum kodu, mesajın zamanı ve silineceği zaman (UTC) var. Zaman ve silineceği zaman yalnız ntfy geçerli değerler yollarsa görünür. "Kabul etti", ntfy'nin mesajı kaydettiği anlamına gelir. Telefonun bildirimi aldığı anlamına gelmez. ntfy teslim onayı vermez. Eski log satırları `Notification sent: ...` der. Bu satırlarda HTTP durum kodu, zaman ve silineceği zaman yoktur. Yollanan tüm bildirimleri listelemek için: `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)"`. |
+| `Notification not confirmed: ...` | ntfy HTTP 2xx ile yanıt verdi ama yanıtta mesaj kimliği yok. Program bildirimi gönderilmiş saymaz. `Notification failed` satırında olduğu gibi daha sonra yeniden dener. Satır tekrar ediyorsa `config.json` içindeki `ntfy_server` değerini kontrol et. |
 | `The token expires soon. Refreshing it.` | Normal yenileme. Her saat olur. |
 | `Reconnecting in 5 seconds.` | Bağlantı kapandı, program yeniden bağlanıyor. Token yenilemesinden sonra bu satırı her saat görürsün. |
 | `MQTT error: Keepalive timeout` | Ağ kesintisi. Arada bir olması normal. Sık oluyorsa ağı kontrol et. |
 | `Could not refresh the token ...` | Yeniden giriş yapman gerekiyor. Aşağıya bak. |
-| `Notification failed: ...` | ntfy'ye ulaşılamadı. Program 30 saniye sonra yeniden dener, sonra her seferinde daha uzun bekler, en çok 10 dakika. Satır tekrar ediyorsa konu adını ve ağı kontrol et. |
+| `Notification failed: ...` | ntfy'ye ulaşılamadı ya da ntfy bir HTTP hatasıyla yanıt verdi. İlk yeniden deneme yaklaşık 30 saniye sonra gelir. Temel bekleme her hatada iki katına çıkar ve 10 dakikada durur. Program buna yüzde 20'ye kadar rastgele bir sapma ekler. Bu yüzden en uzun bekleme yaklaşık 12 dakikadır. Program her denemeden önce bildirimin hala gerekip gerekmediğini yeniden kontrol eder. Araçtan veri gelmediğini söyleyen bildirim sabit 10 dakika bekler. Satır tekrar ediyorsa konu adını ve ağı kontrol et. |
 | `Subscribe error: ... Reconnecting.` | Akış aboneliği reddetti. Program yeniden bağlanır. Satır tekrar ediyorsa portalda **CarData Stream** anahtarının açık olduğunu kontrol et. |
 | `The history file is full. ...` | `messages.jsonl` 10 MB'a ulaştı ve `messages.jsonl.1` oldu. Bu normal. |
 | `A stream message was skipped: ...` | Mesaj çok büyüktü (64 KB'tan fazla). Program onu kaydetmedi. |
@@ -124,7 +126,7 @@ Giriş adımları için [3. adımın](04-sunucu-kurulumu.md) 7. bölümüne bak.
 | Yoldayken bildirim geliyor | Akışta `travelledDistance` yok. | Portalda bu özniteliği ekle. |
 | Aralık cam tavan için bildirim gelmiyor | Akışta `tiltStatus` yok. | Portalda bu özniteliği ekle. |
 | Bildirimdeki saat yanlış | `timezone` ayarı boş veya yanlış. | `config.json` içine kendi saat dilimini yaz. Örnek: `Europe/Istanbul`. |
-| Log "Notification sent" diyor ama telefonda bir şey yok | Abonelik yok veya bildirimler kapalı. | ntfy uygulamasında konu adını ve telefon izinlerini kontrol et. |
+| Log "Notification accepted by ntfy" diyor ama telefonda bir şey yok | Abonelik yok, bildirimler kapalı ya da push telefona ulaşmadı. | ntfy uygulamasında konu adını ve telefon izinlerini kontrol et. Sonra [Kaybolan bildirimler](03-ntfy.md#kaybolan-bildirimler) bölümündeki adımları izle. |
 | SSH "Connection timed out" veriyor | `--tunnel-through-iap` bayrağı eksik. | Bayrağı ekle. Sunucu yalnızca IAP tünelini kabul ediyor. |
 | Bayrak var ama SSH yanıt vermiyor | Sunucunun belleği dolu. | 5 dakika bekle. Sonra sunucuyu durdurup başlat: `gcloud compute instances stop` ve `start`. `reset` kullanma. `tools/replay.mjs` aracını sunucuda çalıştırma. |
 

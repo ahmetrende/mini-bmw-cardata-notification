@@ -79,12 +79,17 @@ sudo grep ntfy_topic /var/lib/mini-watch/config.json
 
 ## Kaybolan bildirimler
 
-ntfy.sh teslimatı garanti etmez. Program bildirimi yollasa ve ntfy.sh onu kaydetse de bildirim bazen telefona ulaşmaz.
+ntfy.sh teslimatı garanti etmez. Program yalnız ntfy.sh'in mesajı kabul ettiğini bilir. Telefonun mesajı gösterip göstermediğini bilmez.
 
-- iPhone'da ntfy.sh push'u Google Firebase ve Apple üzerinden yollar. Firebase bir mesajı bir sınır yüzünden reddederse ntfy.sh o yayıncının push'larını 10 dakika durdurur. Mesaj ntfy.sh'te kalır. Kaynak: ntfy yapılandırma rehberi.
-- Test kurulumunda 19 günde 4 bildirim kayboldu (yaklaşık 20'de 1). İki telefon aynı mesajı aynı anda kaçırdı.
-- Kaybolan bir bildirimi aramak için önce kilit ekranına ve Bildirim Merkezi'ne bak. Sonra ntfy uygulamasını aç ve listeyi aşağı çek. Uygulama yalnız elindeki en yeni mesajdan sonrakileri yükler. Daha yeni bir mesajdan önce kaybolan mesaj görünmez.
-- Sunucu günlüğü, yollanan her bildirimi ntfy kimliğiyle gösterir: `sudo journalctl -u mini-watch --no-pager | grep "Notification sent"`.
+- **Ne görüldü?** Yazarın kurulumunda 19 gün içinde 4 bildirim yazarın telefonunda görünmedi. Yazar o sırada program log'una ve ntfy önbelleğine baktı. Her mesaj ikisinde de vardı. Bu günlerden birinde ailedeki ikinci telefon da aynı mesajı kaçırdı. Bu, yazarın tek bir kurulumdaki gözlemi. Genel bir kayıp oranı değil.
+- **Olası bir sebep (kanıtlanmadı).** iPhone'da ntfy.sh push'u Google Firebase ve Apple üzerinden yollar. Firebase bir mesajı bir sınır yüzünden reddederse ntfy.sh o yayıncının Firebase push'larını 10 dakika engeller. Kaynak: ntfy yapılandırma rehberi. Yazarın kurulumunda bunun olduğunu gösteren bir şey yok.
+- **Ne kontrol edebilirsin?** Gelmeyen bir bildirimden sonra şu adımları izle:
+  1. Önce kilit ekranına ve Bildirim Merkezi'ne bak. Bu adımdan önce ntfy uygulamasını açma. Uygulama açılınca yalnız elindeki en yeni mesajdan sonraki mesajları yükler. Daha eski, kaybolan bir mesaj görünmez.
+  2. Mesaj kimliğini log'da bul. Log onu `ntfy id` olarak gösterir: `sudo journalctl -u mini-watch --no-pager | grep -E "Notification (sent|accepted)"`.
+  3. Sunucuda `sudo mini-watch ntfy-check <id>` komutunu çalıştır.
+  4. Sonuca bak. "found": ntfy mesajı tutuyor, yani kayıp ntfy'den sonra oldu. "missing": önbellek süresi doldu (varsayılan 12 saat) ya da ntfy mesajı hiç tutmadı. "unknown": kontrol bir sonuç vermedi. Kontroldeki mesaj kimliğini yok sayan bir ntfy sunucusu 64 KB'tan büyük bir yanıt yollayabilir. Bu durumda sonuç "unknown" olur.
+
+ntfy teslim onayı vermez. Kaybolan bir bildirim kabul edilemezse teslim onayı veren bir servis bir seçenektir. Örnek: Pushover, acil (emergency) öncelik ve alındı onayı (receipt) ile. Bu program o servisi desteklemez.
 
 ## Telefon notları
 

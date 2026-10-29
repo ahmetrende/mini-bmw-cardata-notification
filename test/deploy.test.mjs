@@ -1,10 +1,47 @@
 // The files in deploy/, install.sh and the guides must agree on the log clean-up.
+// The wrapper deploy/mini-watch must accept the commands of the guides.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
+
+const wrapper = read('deploy/mini-watch');
+
+test('wrapper: ntfy-check is an allowed command, and all arguments go to the program', () => {
+  assert.match(wrapper, /^ {2}login \| ntfy-test \| ntfy-check \| doctor\) ;;$/m);
+  assert.match(wrapper, /^exec runuser -u miniwatch -- .*\/mini_watch\.mjs "\$@"$/m);
+  assert.match(wrapper, /Usage: sudo mini-watch login \| ntfy-test \| ntfy-check <id> \| doctor/);
+  const usage = wrapper.split('\n').filter((text) => text.startsWith('#   sudo mini-watch '));
+  assert.deepEqual(
+    usage.map((text) => text.split(/\s+/)[3]),
+    ['login', 'ntfy-test', 'ntfy-check', 'doctor'],
+  );
+  assert.equal(new Set(usage.map((text) => text.indexOf(' # '))).size, 1, 'the comments start in the same column');
+});
+
+test('wrapper: without sudo, ntfy-check exits with 2 (no conclusion), the other commands with 1', () => {
+  assert.match(wrapper, /if \[ "\$\{1:-\}" = ntfy-check \]; then exit 2; fi\n {2}exit 1\nfi/);
+});
+
+// Runs the wrapper as a normal user. It stops before it reads a file or runs the program.
+test('wrapper: the exit codes without sudo', { skip: process.getuid?.() === 0 ? 'the test user is root' : false }, () => {
+  const script = fileURLToPath(new URL('deploy/mini-watch', root));
+  for (const [args, status] of [
+    [['ntfy-check', 'abc123def456'], 2],
+    [['ntfy-check'], 2],
+    [['ntfy-test'], 1],
+    [['doctor'], 1],
+    [[], 1],
+  ]) {
+    const out = spawnSync('sh', [script, ...args], { encoding: 'utf8' });
+    assert.equal(out.status, status, `${args.join(' ')}: ${out.stderr}`);
+    assert.match(out.stderr, /^Run it with sudo: sudo mini-watch /);
+  }
+});
 
 const service = read('deploy/mini-watch-log-clean.service');
 const days = service.match(/--vacuum-time=(\d+)d\b/)?.[1];

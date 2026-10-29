@@ -79,12 +79,17 @@ sudo grep ntfy_topic /var/lib/mini-watch/config.json
 
 ## Lost notifications
 
-ntfy.sh gives no delivery guarantee. Sometimes a notification does not arrive on the phone, although the program sent it and ntfy.sh has it.
+ntfy.sh gives no delivery guarantee. The program knows only that ntfy.sh accepted a message. It does not know if a phone showed it.
 
-- On an iPhone, ntfy.sh sends the push through Google Firebase and Apple. If Firebase refuses a message because of a limit, ntfy.sh stops the pushes of that sender for 10 minutes. The message stays on ntfy.sh. Source: the ntfy configuration guide.
-- The tested setup lost 4 notifications in 19 days (about 1 in 20). Two phones lost the same message at the same time.
-- To find a lost notification, look at the lock screen and the notification center first. Then open the ntfy app and pull down the list. The app loads only the messages after its newest message. A lost message before a newer one does not show.
-- The server log shows each sent notification with its ntfy id: `sudo journalctl -u mini-watch --no-pager | grep "Notification sent"`.
+- **What was seen.** In the author's setup, 4 notifications did not appear on the author's phone in 19 days. The author checked the program log and the ntfy cache at the time. Each message was in both. On one of these days, the second phone of the family missed the same message. This is the author's report of one setup. It is not a general loss rate.
+- **A possible cause, not proven.** On an iPhone, ntfy.sh sends the push through Google Firebase and Apple. If Firebase refuses a message because of a limit, ntfy.sh blocks the Firebase pushes of that sender for 10 minutes. Source: the ntfy configuration guide. Nothing shows that this happened in the author's setup.
+- **What you can check.** After a missing notification, do these steps:
+  1. Look at the lock screen and the notification center first. Do not open the ntfy app before this step. When the app opens, it loads only the messages after its newest message. An older missing message does not show.
+  2. Find the message id in the log. The log shows it as `ntfy id`: `sudo journalctl -u mini-watch --no-pager | grep -E "Notification (sent|accepted)"`.
+  3. Run `sudo mini-watch ntfy-check <id>` on the server.
+  4. Read the result. "found": ntfy has the message, so the loss is after ntfy. "missing": the cache time ended (12 hours by default), or ntfy never kept the message. "unknown": the check gives no conclusion. An ntfy server that ignores the message id of the check can send more than 64 KB, and then the result is "unknown".
+
+ntfy gives no delivery confirmation. If a lost notification is not acceptable, a service with a delivery confirmation is an option, for example Pushover with emergency priority and a receipt. This program does not support it.
 
 ## Phone notes
 
