@@ -70,7 +70,7 @@ sudo systemctl restart mini-watch
 | `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |
 | `ntfy_tags` | aşağıya bak | Başlığın başındaki emoji. Her bildirim türü için bir ntfy etiket adı: `open`, `still_open`, `closed`, `locked`, `silence`, `test`. Varsayılanlar: `warning` (⚠️), `warning`, `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `car` (🚗). Örnek: `{"open": "rotating_light"}`. Yazmadığın tür varsayılanını korur. Adlar [ntfy emoji listesinde](https://docs.ntfy.sh/emojis/). |
 | `notify_trip` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) son sürüşün süresi, parantez içinde. Örnek: `(sürüş 23 dk)`. Yalnız son ayrıntılı bildirimden sonra kilometre arttıysa (sürüşten sonra) görünür. |
-| `notify_battery` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) batarya seviyesi ve menzil, parantez içinde. Örnek: `(batarya %64, menzil 187 km)`. Öznitelikler akışta olmalı. `notify_trip` ile aynı kural: yalnız sürüşten sonra. Şarj durumu bunun dışında: her zaman görünür. |
+| `notify_battery` | `false` | `true` = ilk bildirimlerin sonunda (hatırlatmalarda değil) batarya seviyesi ve menzil, parantez içinde. Örnek: `(batarya %64, menzil 187 km)`. Attribute'lar akışta olmalı. `notify_trip` ile aynı kural: yalnız sürüşten sonra. Şarj durumu bunun dışında: her zaman görünür. |
 | `notify_battery_below_pct` | 100 | 1 ile 100 arasında bir sayı. Batarya seviyesi ve menzil, seviye bu yüzdenin altındaysa görünür. Örnek: `30` yazarsan yalnız %30'un altında görünür. 100 = her zaman. Yalnız `notify_battery` açıksa çalışır. Araç şarj olurken bu sınır uygulanmaz. |
 | `lock_confirm` | `false` | `true` = aracı kilitleyince ve her parça kapalıyken "kilitlendi, her şey kapalı" mesajı. Sistemin çalıştığını gösterir. |
 | `silence_alert_hours` | 0 (kapalı) | Araçtan bu kadar saat veri gelmezse tek bir bildirim. Araç uyurken hiçbir şey yollamaz. Bu yüzden uzun süre park halinde de bu bildirim gelir. |
@@ -130,8 +130,8 @@ Giriş adımları için [3. adımın](04-sunucu-kurulumu.md) 7. bölümüne bak.
 | `Message:` satırı yok, ama aracı kullanıyorsun | Akış kurulu değil. | Portalda **Configuration status** değerinin **ready** olduğunu kontrol et. |
 | `Connection refused` | Token kapsamı eksik. | İki aboneliği kontrol et. Yeniden giriş yap. |
 | Çok sayıda `Reconnecting` satırı | Program aynı hesapla başka bir yerde de çalışıyor. | Diğer kopyayı durdur. Hesap tek bağlantıya izin veriyor. |
-| Yoldayken bildirim geliyor | Akışta `travelledDistance` yok. | Portalda bu özniteliği ekle. |
-| Aralık cam tavan için bildirim gelmiyor | Akışta `tiltStatus` yok. | Portalda bu özniteliği ekle. |
+| Yoldayken bildirim geliyor | Akışta `travelledDistance` yok. | Portalda bu attribute'u ekle. |
+| Aralık cam tavan için bildirim gelmiyor | Akışta `tiltStatus` yok. | Portalda bu attribute'u ekle. |
 | Bildirimdeki saat yanlış | `timezone` ayarı boş veya yanlış. | `config.json` içine kendi saat dilimini yaz. Örnek: `Europe/Istanbul`. |
 | Log "Notification accepted by ntfy" diyor ama telefonda bir şey yok | Abonelik yok, bildirimler kapalı ya da push telefona ulaşmadı. | ntfy uygulamasında konu adını ve telefon izinlerini kontrol et. Sonra [Kaybolan bildirimler](03-ntfy.md#kaybolan-bildirimler) bölümündeki adımları izle. |
 | SSH "Connection timed out" veriyor | `--tunnel-through-iap` bayrağı eksik. | Bayrağı ekle. Sunucu yalnızca IAP tünelini kabul ediyor. |

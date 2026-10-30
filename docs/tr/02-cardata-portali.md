@@ -50,12 +50,12 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 ## 5. Veri akışını ayarla
 
 1. **CarData Streaming** bölümünde **Configure data stream** düğmesine bas.
-2. Arama kutusunu kullan. Aşağıdaki tablodaki öznitelikleri bul ve her birini işaretle.
+2. Arama kutusunu kullan. Aşağıdaki tablodaki attribute'ları bul ve her birini işaretle.
 3. **Show selected attributes only** anahtarına bas ve listeni kontrol et. En az 14 satır olmalı.
 4. **Submit and initiate stream** düğmesine bas.
 5. Ana sayfada **Configuration status** değerinin **ready** olduğunu kontrol et.
 
-**Zorunlu öznitelikler:**
+**Zorunlu attribute'lar:**
 
 | Aranacak | İşaretlenecek |
 |---|---|
@@ -65,9 +65,9 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 | `sunroof` | `vehicle.cabin.sunroof.status`, `vehicle.cabin.sunroof.tiltStatus` |
 | `travelledDistance` | `vehicle.vehicle.travelledDistance` (program, aracın yolda olduğunu bununla anlıyor) |
 
-**İsteğe bağlı öznitelikler:**
+**İsteğe bağlı attribute'lar:**
 
-| Öznitelik | Ne işe yarar? |
+| Attribute | Ne işe yarar? |
 |---|---|
 | `vehicle.cabin.door.status` | Merkezi kilit. Önerilir. Aracı kilitlediğin anda bildirim gelir. Program aracın yolda olduğunu da anlar. Test edilen araç yolluyor. |
 | `vehicle.drivetrain.engine.isIgnitionOn` | Kontak durumu. Test edilen araç yollamadı. |
@@ -78,13 +78,13 @@ Kutuda iki anahtar var. Anahtarları **bu sırayla** aç:
 | `vehicle.drivetrain.electricEngine.charging.status` | Şarj durumu: `INITIALIZATION`, `CHARGINGACTIVE`, `CHARGINGPAUSED`, `CHARGINGENDED`, `CHARGINGERROR` veya `NOCHARGING`. `notify_battery` ayarı için. Test edilen araç yolluyor. |
 | `vehicle.body.chargingPort.status` | Fiş durumu: `CONNECTED` veya `DISCONNECTED`. `notify_battery` ayarı için. Test edilen araç yolluyor. |
 
-Portal, araç tipine uygun öznitelikleri gösterir. Akış ise yalnızca aracının desteklediklerini yollar. Eksik bir öznitelik hata vermez, ama o parça için bildirim çalışmaz.
+Portal, araç tipine uygun attribute'ları gösterir. Akış ise yalnızca aracının desteklediklerini yollar. Eksik bir attribute hata vermez, ama o parça için bildirim çalışmaz.
 
 ## Yedek: yazarın tam seçim listesi
 
-Yazarın akışında bu 34 öznitelik var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan özniteliklere ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu öznitelikleri **Change data selection** ile yeniden işaretle.
+Yazarın akışında bu 34 attribute var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan attribute'lara ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu attribute'ları **Change data selection** ile yeniden işaretle.
 
-| Öznitelik | Ne için | Test edilen araç yolluyor mu? |
+| Attribute | Ne için | Test edilen araç yolluyor mu? |
 |---|---|---|
 | `vehicle.vehicle.travelledDistance` | Sürüş tespiti (zorunlu) | evet |
 | `vehicle.cabin.door.status` | Kilit durumu: başlıklar, kilit onayı, sürüş tespiti (önerilir) | evet |

@@ -16,7 +16,7 @@ Program araca bağlanmaz. Aracı da uyandırmaz.
 
 ## Programın izlediği parçalar
 
-| Parça | CarData özniteliği | Açık sayılan değer |
+| Parça | CarData attribute'u | Açık sayılan değer |
 |---|---|---|
 | 4 kapı | `vehicle.cabin.door.row{1,2}.{driver,passenger}.isOpen` | `true` |
 | 4 cam | `vehicle.cabin.window.row{1,2}.{driver,passenger}.status` | `OPEN`, `INTERMEDIATE` |
@@ -25,7 +25,7 @@ Program araca bağlanmaz. Aracı da uyandırmaz.
 | Bagaj | `vehicle.body.trunk.isOpen`, `vehicle.body.trunk.door.isOpen` | `OPEN`, `INTERMEDIATE`, `true` |
 | Kaput | `vehicle.body.hood.isOpen` | `true` |
 
-Aracın bu öznitelikleri yollaması gerekir. Portal, aracının yolladığı özniteliklerin listesini gösterir. Listeyi nasıl okuyacağın 1. adımda yazıyor.
+Aracın bu attribute'ları yollaması gerekir. Portal, aracının yolladığı attribute'ların listesini gösterir. Listeyi nasıl okuyacağın 1. adımda yazıyor.
 
 ## Araç yolda mı, park halinde mi?
 
@@ -65,7 +65,7 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 - **Kilit onayı.** `lock_confirm` açıksa, aracı dışarıdan kilitleyince ve her parça kapalıyken "kilitlendi, her şey kapalı" mesajı gelir. Sistemin çalıştığını gösterir. Son onaydan sonra bir kapı açıldıysa ya da araç sürüldüyse gelir. Araca yakın duran bir anahtar (örneğin valede) kapı açılmadan aracı birçok kez kilitleyip açabilir. Bu döngüler hiçbir şey üretmez. Son onaydan ya da "Her şey kapandı" mesajından sonra 2 dakikadan kısa sürede yapılan kilit de hiçbir şey üretmez. Mesaj, kilitten en geç 10 dakika sonra gelir.
 - **Sonda ayrıntılar.** İki ayar, ilk bildirimlerin (açık parça, "her şey kapandı", "kilitlendi") sonuna parantez içinde ayrıntı ekler. Hatırlatmalarda ayrıntı yoktur. Örnek: "(sürüş 23 dk, batarya %64, menzil 187 km)". Ayrıntılar bir sürüşe aittir. Son ayrıntılı bildirimden sonra kilometre arttıysa görünür. Sürüşsüz bir kilit yalnız "kilitlendi, her şey kapalı" mesajını verir. Kilometre değeri yollamayan araç, elindekini gösterir. Her ayar tek başına çalışır. Kapatmak için `config.json` içinde `false`, açmak için `true` yaz. Değişiklikten sonra servisi yeniden başlat.
   - `notify_trip`: son sürüşün süresi. Araç kendini kilitleyince (`LOCKED`) başlar, park edince kilit açılınca biter. 10 dakikadan kısa bir mola aynı sürüştür, yalnız mola sırasında bir bildirim gittiyse değil. O zaman sonraki sürüş yeni bir sürüştür. Kilit verisi olmayan araçta süre görünmez.
-  - `notify_battery`: batarya seviyesi (yüzde) ve menzil (km). Öznitelikler akışta olmalı (1. adıma bak). Bunları yollamayan araçta bir şey görünmez. Mil cinsinden menzil kilometreye çevrilir. `notify_battery_below_pct` ayarıyla (örneğin `30`) seviye ve menzil, yalnız seviye bu yüzdenin altındaysa görünür. Araç seviye yollamazsa görünmezler. Araç şarj olurken metin, seviyeyle birlikte şarj durumunu gösterir. Örnek: "(şarj oluyor %64)". Şarj durumu her zaman görünür, sürüş olmasa da ve her seviyede. Durumlar: "şarj oluyor", "şarj başlatılıyor", "şarj duraklatıldı", "şarj tamamlandı", "şarj hatası" ve "fiş takılı ama şarj olmuyor". `vehicle.drivetrain.electricEngine.charging.status` ve `vehicle.body.chargingPort.status` öznitelikleri akışta olmalı. Araç şarja hazırlanırken (`INITIALIZATION`) bildirim, sonuç için en çok 30 saniye bekler.
+  - `notify_battery`: batarya seviyesi (yüzde) ve menzil (km). Attribute'lar akışta olmalı (1. adıma bak). Bunları yollamayan araçta bir şey görünmez. Mil cinsinden menzil kilometreye çevrilir. `notify_battery_below_pct` ayarıyla (örneğin `30`) seviye ve menzil, yalnız seviye bu yüzdenin altındaysa görünür. Araç seviye yollamazsa görünmezler. Araç şarj olurken metin, seviyeyle birlikte şarj durumunu gösterir. Örnek: "(şarj oluyor %64)". Şarj durumu her zaman görünür, sürüş olmasa da ve her seviyede. Durumlar: "şarj oluyor", "şarj başlatılıyor", "şarj duraklatıldı", "şarj tamamlandı", "şarj hatası" ve "fiş takılı ama şarj olmuyor". `vehicle.drivetrain.electricEngine.charging.status` ve `vehicle.body.chargingPort.status` attribute'ları akışta olmalı. Araç şarja hazırlanırken (`INITIALIZATION`) bildirim, sonuç için en çok 30 saniye bekler.
 - **Araca dönünce.** Bildirimden sonra bir kapı açılırsa kalan hatırlatmalar iptal olur. Aracı yeniden kilitlediğinde bir parça hala açıksa araç 2 dakika kilitli kaldıktan sonra yeni bir seri başlar. Bu 2 dakikada kilit açılırsa bekleme baştan başlar. Böylece aracın etrafında dolaşırken yaptığın kilit açma/kapama tek bildirime iner. Kilitlemeden ayrılırsan yeni seri normal beklemeden sonra başlar. Sürüşten sonraki ilk kilitte bildirim yine hemen gelir. Kapı açılmadan yapılan kilit açma ve kilitleme hiçbir şeyi değiştirmez. Anahtarın tuşu ya da araca yakın duran anahtar, örneğin valede, bunu birçok kez yapabilir.
 - **Tek mesaj.** Bildirim, açık olan tüm parçaları sıralar. Aynı saate sahip parçalar saati paylaşır. Aynı saatteki camlar (ya da kapılar) adı da paylaşır. Örnek: "cam tavan (aralık) 15:45'ten beri, sol ve sağ ön cam ve sol ön kapı 16:54'ten beri". Dört cam birden açıksa "tüm camlar" yazar. En eski saat başta durur. Bir cam, tam açık mı kısmen açık mı olduğunu gösterir. Örnek: "sol ön cam (kısmen açık)". Araç cam için yalnız bu iki durumu yollar. Açıklığı santimetre ya da yüzde olarak yollamaz.
 - **Başlıklar.** Açık parça bildiriminin başlığı kilit durumunu söyler. "MINI kilitlendi ama açık parça var": araç kilitli. "MINI kilitli değil, açık parça var": araç kilit durumunu yollar ve araç kilitli değil. "MINI'de açık parça var": araç kilit verisi yollamıyor. Hatırlatmanın başlığında "hala açık" yazar. Başlığın altındaki metin açık parçaları ve saatlerini söyler. Örnek: "Cam tavan (aralık) 13:48'den beri".
@@ -86,11 +86,11 @@ Aracın `isIgnitionOn` veya `isMoving` verisi varsa program onları da kullanır
 - **ntfy bildirimi kabul etmezse.** ntfy'ye ulaşılamazsa ya da ntfy bir HTTP hatasıyla yanıt verirse program bildirimi gönderilmiş saymaz. HTTP 2xx dönen ama mesaj kimliği içermeyen bir yanıt da hata sayılır. İlk yeniden deneme yaklaşık 30 saniye sonra gelir. Temel bekleme her hatada iki katına çıkar ve 10 dakikada durur. Program buna yüzde 20'ye kadar rastgele bir sapma ekler. Bu yüzden en uzun bekleme yaklaşık 12 dakikadır. Program her denemeden önce bildirimin hala gerekip gerekmediğini yeniden kontrol eder. Kilit onayının süresi kilitten 10 dakika sonra dolar. Kapanan bir parça için uyarı gerekmez. Araçtan veri gelmediğini söyleyen bildirim ise bir hatadan sonra sabit 10 dakika bekler.
 - **"Gönderildi" ne demek?** ntfy mesajı kabul edince (HTTP 2xx ve bir mesaj kimliği) program bildirimi gönderilmiş sayar. Program, telefonun bildirimi alıp almadığını göremez. Mesajı yeniden yollamaz. Program bu durumu hemen kaydeder. Araçtan veri gelmediğini söyleyen bildirimde ise durumu yaklaşık 1 dakika içinde kaydeder. Program yeniden başlasa da bildirim normalde tekrar gitmez. Hatırlatmalar teslime göre değil, kendi zamanlarına göre gelir. ntfy teslim onayı vermez. ntfy'nin bir mesajı tuttuğunu görmek için `sudo mini-watch ntfy-check <id>` komutunu kullan. Mesaj kimliğini `Notification accepted by ntfy` log satırında bulursun. Bkz. [Kaybolan bildirimler](03-ntfy.md#kaybolan-bildirimler).
 - **Abonelik hatası.** Akış aboneliği reddederse program bağlantıyı kapatır ve yeniden bağlanır.
-- **Her mesajda tam durum.** Araç, seçtiğin tüm öznitelikleri her mesajda yollar. Kaybolan bir mesaj, bir durumu uzun süre gizlemez.
+- **Her mesajda tam durum.** Araç, seçtiğin tüm attribute'ları her mesajda yollar. Kaybolan bir mesaj, bir durumu uzun süre gizlemez.
 
 ## İleride yeni olaylar
 
-Program yalnızca kapıları, camları, cam tavanı, bagajı ve kaputu izliyor. CarData'da daha fazla öznitelik var. Yeni bir olay için kodda değişiklik gerekir. İstersen bir issue aç ve talebini yaz.
+Program yalnızca kapıları, camları, cam tavanı, bagajı ve kaputu izliyor. CarData'da daha fazla attribute var. Yeni bir olay için kodda değişiklik gerekir. İstersen bir issue aç ve talebini yaz.
 
 ## Teknik ayrıntılar
 
