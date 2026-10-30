@@ -82,7 +82,7 @@ The portal shows the attributes that exist for your car type. The stream sends o
 
 ## Backup: the full list of the author's selection
 
-The stream of the author has these 34 attributes. The program needs only the attributes that say "required", "recommended" or a setting name. The others are optional. If the portal loses your list, tick these attributes again with **Change data selection**.
+The stream of the author has these 36 attributes. The program needs only the attributes that say "required", "recommended" or a setting name. The others are optional. If the portal loses your list, tick these attributes again with **Change data selection**.
 
 | Attribute | Use | Sent by the tested car |
 |---|---|---|
@@ -113,6 +113,8 @@ The stream of the author has these 34 attributes. The program needs only the att
 | `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Battery level, alternative (`notify_battery`) | no |
 | `vehicle.drivetrain.electricEngine.remainingElectricRange` | Range, alternative (`notify_battery`) | no |
 | `vehicle.vehicle.antiTheftAlarmSystem.alarm.armStatus` | Alarm state. Not used. | no |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.isOn` | Alarm sounds (the car honks). Not used. Added on 2026-10-31 for a test. | not known yet |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.activationTime` | Time of the last alarm. Not used. Added on 2026-10-31 for a test. | not known yet |
 | `vehicle.vehicle.speedRange.lowerBound` | Speed range. Not used. | no |
 | `vehicle.vehicle.speedRange.upperBound` | Speed range. Not used. | no |
 | `vehicle.body.trunk.isLocked` | Trunk lock. Not used. | no |

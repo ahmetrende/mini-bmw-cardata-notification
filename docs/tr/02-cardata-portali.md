@@ -82,7 +82,7 @@ Portal, araç tipine uygun attribute'ları gösterir. Akış ise yalnızca arac�
 
 ## Yedek: yazarın tam seçim listesi
 
-Yazarın akışında bu 34 attribute var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan attribute'lara ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu attribute'ları **Change data selection** ile yeniden işaretle.
+Yazarın akışında bu 36 attribute var. Program yalnızca "zorunlu", "önerilir" ya da bir ayar adı yazan attribute'lara ihtiyaç duyar. Diğerleri isteğe bağlı. Portal listeni kaybederse bu attribute'ları **Change data selection** ile yeniden işaretle.
 
 | Attribute | Ne için | Test edilen araç yolluyor mu? |
 |---|---|---|
@@ -113,6 +113,8 @@ Yazarın akışında bu 34 attribute var. Program yalnızca "zorunlu", "önerili
 | `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Batarya seviyesi, alternatif (`notify_battery`) | hayır |
 | `vehicle.drivetrain.electricEngine.remainingElectricRange` | Menzil, alternatif (`notify_battery`) | hayır |
 | `vehicle.vehicle.antiTheftAlarmSystem.alarm.armStatus` | Alarm durumu. Kullanılmıyor. | hayır |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.isOn` | Alarm çalıyor (araç korna çalıyor). Kullanılmıyor. 31 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.activationTime` | Son alarmın zamanı. Kullanılmıyor. 31 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
 | `vehicle.vehicle.speedRange.lowerBound` | Hız aralığı. Kullanılmıyor. | hayır |
 | `vehicle.vehicle.speedRange.upperBound` | Hız aralığı. Kullanılmıyor. | hayır |
 | `vehicle.body.trunk.isLocked` | Bagaj kilidi. Kullanılmıyor. | hayır |
