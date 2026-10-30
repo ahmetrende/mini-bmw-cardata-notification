@@ -120,10 +120,10 @@ Yazarın akışında bu 38 öznitelik var. Program yalnızca "zorunlu", "öneril
 | `vehicle.trip.segment.end.travelledDistance` | Son sürüşten sonraki kilometre. Kullanılmıyor. | hayır |
 | `vehicle.drivetrain.electricEngine.charging.connectorStatus` | Fiş türü ve durumu. Kullanılmıyor. | hayır |
 | `vehicle.drivetrain.electricEngine.charging.hvStatus` | Yüksek gerilim şarj sistemi. Kullanılmıyor. | hayır |
-| `vehicle.cabin.door.row1.driver.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
-| `vehicle.cabin.door.row1.passenger.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
-| `vehicle.cabin.door.row2.driver.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
-| `vehicle.cabin.door.row2.passenger.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
+| `vehicle.cabin.door.row1.driver.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. Araç, 78 kapı değişikliği olan 27 saatte hiç değer yollamadı. | hayır |
+| `vehicle.cabin.door.row1.passenger.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. Araç, 78 kapı değişikliği olan 27 saatte hiç değer yollamadı. | hayır |
+| `vehicle.cabin.door.row2.driver.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. Araç, 78 kapı değişikliği olan 27 saatte hiç değer yollamadı. | hayır |
+| `vehicle.cabin.door.row2.passenger.position` | Kapı açıklığı (yüzde). Kullanılmıyor. 29 Ekim 2026'da test için eklendi. Araç, 78 kapı değişikliği olan 27 saatte hiç değer yollamadı. | hayır |
 
 ## Portalda karşılaşabileceğin sorunlar
 

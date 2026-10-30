@@ -120,10 +120,10 @@ The stream of the author has these 38 attributes. The program needs only the att
 | `vehicle.trip.segment.end.travelledDistance` | Mileage after the last drive. Not used. | no |
 | `vehicle.drivetrain.electricEngine.charging.connectorStatus` | Plug type and state. Not used. | no |
 | `vehicle.drivetrain.electricEngine.charging.hvStatus` | High-voltage charging system. Not used. | no |
-| `vehicle.cabin.door.row1.driver.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
-| `vehicle.cabin.door.row1.passenger.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
-| `vehicle.cabin.door.row2.driver.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
-| `vehicle.cabin.door.row2.passenger.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. | not known yet |
+| `vehicle.cabin.door.row1.driver.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. The car sent no value in 27 hours with 78 door changes. | no |
+| `vehicle.cabin.door.row1.passenger.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. The car sent no value in 27 hours with 78 door changes. | no |
+| `vehicle.cabin.door.row2.driver.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. The car sent no value in 27 hours with 78 door changes. | no |
+| `vehicle.cabin.door.row2.passenger.position` | Door opening in percent. Not used. Added on 2026-10-29 for a test. The car sent no value in 27 hours with 78 door changes. | no |
 
 ## Portal problems
 
