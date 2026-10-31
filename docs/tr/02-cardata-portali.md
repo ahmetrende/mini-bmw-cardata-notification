@@ -113,7 +113,7 @@ Yazarın akışında bu 36 attribute var. Program yalnızca "zorunlu", "önerili
 | `vehicle.powertrain.electric.battery.stateOfCharge.displayed` | Batarya seviyesi, alternatif (`notify_battery`) | hayır |
 | `vehicle.drivetrain.electricEngine.remainingElectricRange` | Menzil, alternatif (`notify_battery`) | hayır |
 | `vehicle.vehicle.antiTheftAlarmSystem.alarm.armStatus` | Alarm durumu. Kullanılmıyor. | hayır |
-| `vehicle.vehicle.antiTheftAlarmSystem.alarm.isOn` | Alarm çalıyor (araç korna çalıyor). Kullanılmıyor. 31 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
+| `vehicle.vehicle.antiTheftAlarmSystem.alarm.isOn` | Alarm çalıyor (araç korna çalıyor). Kullanılmıyor. 31 Ekim 2026'da test için eklendi. | evet (şimdiye kadar hep `false`) |
 | `vehicle.vehicle.antiTheftAlarmSystem.alarm.activationTime` | Son alarmın zamanı. Kullanılmıyor. 31 Ekim 2026'da test için eklendi. | henüz bilinmiyor |
 | `vehicle.vehicle.speedRange.lowerBound` | Hız aralığı. Kullanılmıyor. | hayır |
 | `vehicle.vehicle.speedRange.upperBound` | Hız aralığı. Kullanılmıyor. | hayır |
