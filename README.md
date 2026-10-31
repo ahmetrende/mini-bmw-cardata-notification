@@ -68,7 +68,7 @@ One notification lists all open parts. Parts with the same time share it. You ch
 
 More than one phone can get the notifications. Each phone subscribes to the same topic. See [More than one phone](docs/en/03-ntfy.md#more-than-one-phone).
 
-Optional: the program can send the notifications through Pushover instead of ntfy. One setting (`notify_service`) changes the service. ntfy stays the default. The steps on the phone are not tested yet. See [Pushover](docs/en/06-pushover.md).
+Optional: the program can send the notifications through Pushover instead of ntfy, or through both services. One setting (`notify_service`) changes the service. ntfy stays the default. The author tested the steps on one iPhone. Android and a second phone are not tested. See [Pushover](docs/en/06-pushover.md).
 
 ## Limits
 

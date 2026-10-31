@@ -68,7 +68,7 @@ Tek bildirim, açık olan tüm parçaları sıralar. Aynı saate sahip parçalar
 
 Bildirimler birden fazla telefona gelebilir. Her telefon aynı konuya abone olur. Bkz. [Birden fazla telefon](docs/tr/03-ntfy.md#birden-fazla-telefon).
 
-İsteğe bağlı: Program bildirimleri ntfy yerine Pushover ile de yollayabilir. Servisi tek bir ayar (`notify_service`) değiştirir. Varsayılan servis ntfy olarak kalır. Telefondaki adımlar henüz denenmedi. Bkz. [Pushover](docs/tr/06-pushover.md).
+İsteğe bağlı: Program bildirimleri ntfy yerine Pushover ile ya da iki servisle birden yollayabilir. Servisi tek bir ayar (`notify_service`) değiştirir. Varsayılan servis ntfy olarak kalır. Yazar adımları bir iPhone'da denedi. Android'de ve ikinci bir telefonda denenmedi. Bkz. [Pushover](docs/tr/06-pushover.md).
 
 ## Sınırlar
 

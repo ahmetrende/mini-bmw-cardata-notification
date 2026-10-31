@@ -27,7 +27,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Install the program | `04-server-setup`, part 6 | Runs `deploy/install.sh`, edits `config.json` | Gives the Client ID and the topic name |
 | Log in to the car account | `04-server-setup`, part 7 | Runs the `login` command, shows the code | Approves the code in the browser |
 | Start and test | `04-server-setup`, parts 8 and 9 | Starts the service, reads the log | Does the real test with the car |
-| Pushover instead of ntfy (optional, not yet tested on a phone) | `06-pushover` | Changes `notify_service`. Runs `pushover-test` only when the person asks. | Makes the account, installs the app, buys the license, writes the two keys in `config.json` |
+| Pushover instead of ntfy, or both (optional, tested on one iPhone) | `06-pushover` | Changes `notify_service`. Runs `pushover-test` only when the person asks. | Makes the account, installs the app, buys the license, writes the two keys in `config.json` |
 
 ## Checks that show you finished a step
 
@@ -41,7 +41,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Login | The log line "Login done. Granted scope:" has `cardata:streaming:read`. |
 | Service | The log shows "Connected to the stream." and "Subscribed: qos0". |
 | Notification | `sudo mini-watch ntfy-test` puts a message on the phone. The output shows `Notification accepted by ntfy` with the message id. |
-| Pushover (optional) | `sudo mini-watch pushover-test` puts a message on the phone. The output shows `Notification accepted by Pushover` with the request id. With `notify_service` set to `pushover` or `both`, `sudo mini-watch doctor` shows `Pushover accepted the token and the user key`. Not yet tested on a phone. |
+| Pushover (optional) | `sudo mini-watch pushover-test` puts a message on the phone. The output shows `Notification accepted by Pushover` with the request id. With `notify_service` set to `pushover` or `both`, `sudo mini-watch doctor` shows `Pushover accepted the token and the user key`. Tested on one iPhone with `both` (2026-10-31). |
 | Whole setup | `sudo mini-watch doctor` shows no `FAIL` line. It sends nothing. |
 | Car | After the car sends data, the log shows `Message: vehicle...` lines. |
 
@@ -52,7 +52,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **Do not reset the server with a hard reset** (`gcloud compute instances reset`, or the console **Reset** button). Files that you wrote a moment before can become empty. Use `sudo systemctl reboot`. Run `sync` after you copy files.
 - **One stream connection for each account.** A second copy of the program with the same account breaks both. Do not run the program on the person's own computer when the server runs it.
 - **A notification can be lost between ntfy.sh and the phone.** ntfy gives no delivery confirmation. The log line `Notification accepted by ntfy` has the message id (older log lines say `Notification sent`). Run `sudo mini-watch ntfy-check <id>` to see if ntfy still has the message. The ntfy cache keeps a message for 12 hours by default. "found" means that ntfy.sh has the message. Then the loss is outside the program. Do not change the code for it. "missing" and "unknown" give no proof. See `docs/en/03-ntfy.md`, "Lost notifications". Do not print the topic name. `ntfy-check` does not print it.
-- **Do not run `pushover-test` unasked.** It sends a real notification through Pushover, also while `notify_service` is `ntfy`. Ask the person first. The Pushover token and user key are secrets. The program does not print them, and you must not print them either. Pushover is not yet tested on a phone. See `docs/en/06-pushover.md`.
+- **Do not run `pushover-test` unasked.** It sends a real notification through Pushover, also while `notify_service` is `ntfy`. Ask the person first. The Pushover token and user key are secrets. The program does not print them, and you must not print them either. The author tested Pushover on one iPhone only. See `docs/en/06-pushover.md`.
 - **Keep `ntfy_topic` in `config.json`, also with `pushover` and `off`.** A rollback (`sudo bash deploy/install.sh --rollback`) to a release before Pushover ignores `notify_service`. That release sends through ntfy and does not start without `ntfy_topic`. With `pushover` or `off`, `doctor` shows a `WARN` line when the topic is empty or not valid. A release with `pushover` but without `both` and `off` does not start when `notify_service` is `both` or `off`. Before a rollback, set `notify_service` to `ntfy` or `pushover`.
 - **`notify_service` has four values:** `off` (no notification, the text goes to the log), `ntfy` (default), `pushover` and `both` (ntfy and Pushover at the same time). With `both`, a notification counts as sent when one service accepts it. The program does not try again for the other service. `tools/replay.mjs` sends nothing with each value.
 - **Subscribe before you log in.** Turn on **CarData API**, wait 60 seconds, turn on **CarData Stream**, wait 60 seconds. Then run the `login` command. A login before the subscription gives a token without the stream scope.
@@ -97,7 +97,7 @@ Bu dosya, projeyi kurmaya yardım eden bir yapay zeka aracı içindir. Kurulum r
 
 - Parola, kart numarası ve tek kullanımlık kodu asla sen yazma. Kullanıcı yazar.
 - Token, Pushover token'ı, Pushover kullanıcı anahtarı, Client ID, konu adı, VIN ve IP adresini sohbete veya commit'e yazma.
-- `pushover-test` gerçek bir bildirim yollar. Kullanıcı istemeden çalıştırma. Pushover henüz bir telefonda denenmedi.
+- `pushover-test` gerçek bir bildirim yollar. Kullanıcı istemeden çalıştırma. Pushover yalnız bir iPhone'da denendi.
 - `notify_service` dört değer alır: `off`, `ntfy` (varsayılan), `pushover` ve `both` (ikisi birden). `both` seçiliyken bir servis kabul edince bildirim gönderilmiş sayılır. Eski sürüme dönmeden önce `notify_service` değerini `ntfy` veya `pushover` yap: `both` ve `off` değerlerini bilmeyen sürüm başlamaz.
 - `pushover` ve `off` seçiliyken de `ntfy_topic` ayarını silme. Pushover'dan önceki bir sürüme dönüş bu ayar olmadan başlamaz.
 - Ücret doğuran veya şart kabul eden bir işten önce kullanıcıya sor.

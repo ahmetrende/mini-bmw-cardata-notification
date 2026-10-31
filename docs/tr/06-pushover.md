@@ -4,7 +4,7 @@
 
 Bu sayfa isteğe bağlı. Program bildirimleri varsayılan olarak ntfy ile yollar. Tek bir ayar, servisi Pushover'a, iki servise birden ya da hiçbir servise çevirir.
 
-**Durum.** Programdaki kısım hazır ve testleri var. Telefondaki adımlar (hesap, uygulama ve anahtarlar) **henüz bir telefonda denenmedi**. Bu adımların her birinde bu not var. Bu sayfadaki Pushover servisiyle ilgili bilgiler pushover.net ve destek sayfalarından geliyor. Yazar bunları 31 Ekim 2026'da kontrol etti. Hala açık olan bir bilgide not var.
+**Durum.** Programdaki kısım hazır ve testleri var. Yazar adımları 31 Ekim 2026'da **bir iPhone'da** denedi. Bunlar hesap, uygulama, anahtarlar, `pushover-test` ve gerçek bildirimlerle `both` modu. `pushover` ve `off` modları, Android ve ikinci bir telefon **henüz bir telefonda denenmedi**. Bu sınırı olan her adımda bir not var. Bu sayfadaki Pushover servisiyle ilgili bilgiler pushover.net ve destek sayfalarından geliyor. Yazar bunları 31 Ekim 2026'da kontrol etti. Hala açık olan bir bilgide not var.
 
 ## Pushover ne zaman işe yarar?
 
@@ -45,7 +45,7 @@ pushover.net'e göre yalnız acil öncelik bir alındı onayı verir. Program bu
 
 ## 1. Hesabı ve anahtarları oluştur
 
-**Henüz bir telefonda denenmedi.** Sitedeki ve uygulamadaki adlar farklı olabilir.
+**31 Ekim 2026'da bir iPhone'da denendi.** Sitedeki ve uygulamadaki adlar farklı olabilir.
 
 1. [pushover.net](https://pushover.net) sitesini aç ve bir hesap oluştur. Bu adımı yalnız kullanıcı yapar.
 2. Telefona **Pushover** uygulamasını kur. Aynı hesapla giriş yap. Deneme süresi muhtemelen uygulamaya giriş yapınca başlar.
@@ -86,7 +86,7 @@ sudo mini-watch doctor --offline
 
 ## 3. Deneme bildirimi yolla
 
-**Henüz bir telefonda denenmedi.**
+**31 Ekim 2026'da bir iPhone'da denendi.**
 
 ```bash
 sudo mini-watch pushover-test
@@ -94,13 +94,13 @@ sudo mini-watch pushover-test
 
 Komut, Pushover ile gerçek bir bildirim yollar. `notify_service` değeri `ntfy` iken de çalışır. Böylece Pushover'ı geçiş yapmadan önce deneyebilirsin.
 
-- İyi sonuç: Çıktıda istek kimliğiyle (request id) birlikte `Notification accepted by Pushover` satırı görünür. Son satır `Result: Pushover accepted the test notification. Check the phone.` olur. Program "🚗 MINI deneme bildirimi" başlığını ve "Bildirim çalışıyor" metnini yollar. `language` değeri `en` ise "🚗 MINI test" ve "Notifications work" yollar. Telefonun bunları nasıl gösterdiği henüz denenmedi.
+- İyi sonuç: Çıktıda istek kimliğiyle (request id) birlikte `Notification accepted by Pushover` satırı görünür. Son satır `Result: Pushover accepted the test notification. Check the phone.` olur. Program "🚗 MINI deneme bildirimi" başlığını ve "Bildirim çalışıyor" metnini yollar. `language` değeri `en` ise "🚗 MINI test" ve "Notifications work" yollar. iPhone'da deneme bildirimi başlık ve metinle geldi.
 - Kötü sonuç: Son satır `Result: Pushover did not accept the test notification. See the line above.` olur. Sebep bir üstteki satırda yazar. Bkz. [Sorun giderme](#sorun-giderme).
 - `config.json` içinde eksik ya da hatalı bir anahtar varsa komut bildirim yollamadan durur. Hata mesajı ayarın adını söyler. Değeri göstermez.
 
 ## 4. Pushover'a geç
 
-**Henüz bir telefonda denenmedi.**
+**31 Ekim 2026'da bir iPhone'da `both` değeriyle denendi.** Tek başına `pushover` değeri henüz bir telefonda denenmedi.
 
 1. `config.json` dosyasını aç (2. bölüm). `"notify_service"` satırında `"ntfy"` değerini `"pushover"` yap. Satırın diğer karakterlerini değiştirme.
 2. Yeniden başlatmadan önce dosyayı kontrol et. Çıktıda `FAIL` satırı olmamalı:
@@ -171,7 +171,7 @@ Yeniden denemeler ntfy ile aynı kurallara uyar. [4. adımdaki](05-isletim.md#lo
 
 ## Sınırlar
 
-- **Henüz bir telefonda denenmedi.** Programdaki kısmın testleri yalnız sahte bir Pushover yanıtı kullanır.
+- **Telefon testleri.** Yazar Pushover'ı 31 Ekim 2026'da bir iPhone'da `both` moduyla denedi. Deneme bildirimi ve gerçek bildirimler telefona iki servisten de geldi. `pushover` ve `off` modları, Android ve ikinci bir telefon henüz bir telefonda denenmedi. Programdaki kısmın testleri yalnız sahte bir Pushover yanıtı kullanır.
 - **Acil öncelik henüz yok.** Pushover'ın bir acil (emergency) önceliği (2) var. pushover.net'e göre bu öncelik, sen onaylayana kadar bildirimi tekrarlar ve bir alındı onayı (receipt) verir. Program bunu kullanmaz. Bu, ileride eklenebilecek bir adım.
 - **Teslim grupları.** Program `pushover_user` alanında bir teslim grubu anahtarını kabul eder. pushover.net'e göre bir grup anahtarı, kullanıcı anahtarının yerine çalışır. Uygulamanın sahibi bir abonelik bağlantısı paylaşır ve her kişi bu bağlantıyı açıp abone olur. Gruba giden bir mesaj, aylık limitte her üye için ayrı sayılır. Destek sayfası, bir üyenin kendi Pushover hesabına ve kendi lisansına ihtiyacı olup olmadığını yazmıyor. Grupla ilgili hiçbir adım henüz bir telefonda denenmedi.
 - **Aylık limit.** pushover.net'e göre ücretsiz bir hesap ayda 10.000 mesaj yollayabilir. Program günde birkaç mesaj yollar.

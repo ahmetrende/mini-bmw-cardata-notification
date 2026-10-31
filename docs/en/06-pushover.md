@@ -4,7 +4,7 @@
 
 This page is optional. By default, the program sends the notifications through ntfy. One setting changes the service to Pushover, to both services, or to no service.
 
-**Status.** The program part is ready and has tests. The steps on the phone (account, app and keys) are **not yet tested on a phone**. Each of these steps has this note. The facts about the Pushover service on this page come from pushover.net and its support pages. The author checked them on 2026-10-31. A fact that is still open has a note.
+**Status.** The program part is ready and has tests. The author tested the steps on **one iPhone** on 2026-10-31. These are the account, the app, the keys, `pushover-test` and the mode `both` with real notifications. The modes `pushover` and `off`, Android and a second phone are **not yet tested on a phone**. A step with this limit has a note. The facts about the Pushover service on this page come from pushover.net and its support pages. The author checked them on 2026-10-31. A fact that is still open has a note.
 
 ## When to use Pushover
 
@@ -45,7 +45,7 @@ With `ntfy` and with `off`, the program ignores `pushover_token` and `pushover_u
 
 ## 1. Make the account and the keys
 
-**Not yet tested on a phone.** The names on the website and in the app can be different.
+**Tested on one iPhone on 2026-10-31.** The names on the website and in the app can be different.
 
 1. Open [pushover.net](https://pushover.net) and make an account. Only the person does this step.
 2. Install the **Pushover** app on the phone. Log in with the same account. The trial probably starts when you log in to the app.
@@ -86,7 +86,7 @@ If the output says that `config.json` is not valid JSON, check the quotes and th
 
 ## 3. Send a test notification
 
-**Not yet tested on a phone.**
+**Tested on one iPhone on 2026-10-31.**
 
 ```bash
 sudo mini-watch pushover-test
@@ -94,13 +94,13 @@ sudo mini-watch pushover-test
 
 The command sends a real notification through Pushover. It also works while `notify_service` is `ntfy`. So you can test Pushover before you switch.
 
-- Good result: the output shows `Notification accepted by Pushover` with the request id. The last line is `Result: Pushover accepted the test notification. Check the phone.` The program sends the title "🚗 MINI test" and the text "Notifications work". With `language` set to `tr`, it sends "🚗 MINI deneme bildirimi" and "Bildirim çalışıyor". How the phone shows them is not yet tested.
+- Good result: the output shows `Notification accepted by Pushover` with the request id. The last line is `Result: Pushover accepted the test notification. Check the phone.` The program sends the title "🚗 MINI test" and the text "Notifications work". With `language` set to `tr`, it sends "🚗 MINI deneme bildirimi" and "Bildirim çalışıyor". On the iPhone, the test notification arrived with the title and the text.
 - Bad result: the last line is `Result: Pushover did not accept the test notification. See the line above.` The line above it gives the reason. See [Troubleshooting](#troubleshooting).
 - A missing or wrong key in `config.json` stops the command before it sends. The error names the setting. It does not show the value.
 
 ## 4. Switch to Pushover
 
-**Not yet tested on a phone.**
+**Tested on one iPhone on 2026-10-31, with the value `both`.** The value `pushover` alone is not yet tested on a phone.
 
 1. Open `config.json` (part 2). In the line with `"notify_service"`, change the value `"ntfy"` to `"pushover"`. Do not change the other characters of the line.
 2. Check the file before the restart. The output must have no `FAIL` line:
@@ -171,7 +171,7 @@ The retries follow the same rules as with ntfy. See the line `Notification faile
 
 ## Limits
 
-- **Not yet tested on a phone.** The tests of the program part use a fake Pushover answer only.
+- **Phone tests.** The author tested Pushover on one iPhone with the mode `both` on 2026-10-31. The test notification and the real notifications arrived on the phone through both services. The modes `pushover` and `off`, Android and a second phone are not yet tested on a phone. The tests of the program part use a fake Pushover answer only.
 - **No emergency priority yet.** Pushover has an emergency priority (2). According to pushover.net, it repeats a notification until you confirm it, and it gives a receipt. The program does not use it. It is a possible later step.
 - **Delivery groups.** The program accepts a delivery group key in `pushover_user`. According to pushover.net, a group key works in place of a user key. The owner of the application shares a subscription link, and each person opens the link to subscribe. A message to a group counts once for each member in the monthly limit. The support page does not say if a member needs an own Pushover account and an own license. No step with a group is tested on a phone yet.
 - **Monthly limit.** According to pushover.net, a free account can send 10,000 messages in a month. The program sends a few messages each day.
