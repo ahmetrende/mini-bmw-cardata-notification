@@ -37,7 +37,8 @@ Test edilen araç kontak, hareket ve hız verisi yollamıyor. Program, aracın y
 | Kilometre arttı, ardından sürücü kapısı açıldı | Sürücü indi. Park başladı. |
 | Kilometre 30 dakikadır artmıyor | Araç park halinde. Trafik sıkışıklığında kilometre 10 dakikadan uzun durabilir. |
 | Programda hiç kilometre verisi yok | Bir parça 10 dakikadır açıksa bildirim düşer. |
-| Kilit `LOCKED` ve sonrasında hiçbir kapı açılmadı | Araç yolda. Araç yola çıkınca kendini kilitler. Bildirim yok. |
+| Kilit `LOCKED`, sonrasında hiçbir kapı açılmadı ve kapı, bagaj veya kaput açık değil | Araç yolda. Araç yola çıkınca kendini kilitler. Bildirim yok. |
+| Kilit `LOCKED` ama bir kapı, bagaj veya kaput açık | Araç yolda değil. Açık bir kapıdan uzaklaşınca araç da `LOCKED` gösterir. Normal bekleme geçerli. |
 | Kilit `LOCKED` durumundan `UNLOCKED` durumuna geçti | Sürüş bitti. Araç park edince kilidi kendisi açar. Bekleme baştan başlar. |
 | Son kapı açılışından sonra kilit `SECURED` | Araç park edildi ve dışarıdan kilitlendi. Kilitlerken açık olan parça hemen bildirim üretir. |
 

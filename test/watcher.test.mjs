@@ -859,6 +859,43 @@ test('lock: LOCKED and then a passenger door opens, the car does not count as dr
   assert.deepEqual(sent.map(([minute]) => minute), [15]);
 });
 
+test('lock: LOCKED with a door that stays open (a walk away) is not a drive, the normal wait applies', async () => {
+  // The car shows LOCKED, not SECURED, when you walk away from an open door.
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.5, { [LOCK]: 'LOCKED' }], // the door is still open
+  ];
+  const sent = await simulate(events, 0, 40);
+  assert.ok(sent.length >= 1, 'a notification is sent');
+  assert.equal(sent[0][0], 11, 'the door opened at 1, the wait is 10 minutes');
+  assert.match(sent[0][1], /front left door/i);
+});
+
+test('lock: LOCKED with an open door that closes within the wait gives no notification', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.5, { [LOCK]: 'LOCKED' }],
+    [2, DOOR_CLOSED], // the car then shows SECURED
+    [2.1, { [LOCK]: 'SECURED' }],
+  ];
+  const sent = await simulate(events, 0, 40);
+  assert.deepEqual(sent, []);
+});
+
+test('lock: LOCKED with an open window or sunroof is still a drive', async () => {
+  const events = [
+    [0, { [KM]: 100 }],
+    [1, DOOR_OPEN],
+    [1.1, DOOR_CLOSED],
+    [1.3, { [LOCK]: 'LOCKED' }],
+    [2, { [WIN]: 'OPEN', 'vehicle.cabin.sunroof.status': 'OPEN' }],
+  ];
+  const sent = await simulate(events, 0, 60);
+  assert.deepEqual(sent, [], 'no notification while the car drives');
+});
+
 test('lock: alert_after_lock_min must be a number of minutes', () => {
   checkConfig({ ...DEFAULT_CONFIG, alert_after_lock_min: 0 });
   assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, alert_after_lock_min: -1 }), /alert_after_lock_min/);

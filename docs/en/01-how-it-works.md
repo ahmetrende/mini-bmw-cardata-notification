@@ -37,7 +37,8 @@ The tested car sends no ignition, motion or speed data. The program finds drivin
 | The odometer rose, then the driver door opened | The driver left. Parking starts. |
 | The odometer did not rise for 30 minutes | Parked. A traffic jam can stop the odometer for more than 10 minutes. |
 | The program has no odometer data | A part that is open for 10 minutes causes a notification. |
-| The lock is `LOCKED` and no door opened after that | Driving. The car locks itself when it starts to drive. No notification. |
+| The lock is `LOCKED`, no door opened after that, and no door, trunk or hood is open | Driving. The car locks itself when it starts to drive. No notification. |
+| The lock is `LOCKED`, but a door, the trunk or the hood is open | Not driving. The car also shows `LOCKED` when you walk away from an open door. The normal wait applies. |
 | The lock changes from `LOCKED` to `UNLOCKED` | The drive ended. The car unlocks itself when you park. The wait starts again. |
 | The lock is `SECURED` after the last door opening | Parked and locked from outside. A part that was open at the lock causes a notification at once. |
 

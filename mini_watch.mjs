@@ -1022,8 +1022,15 @@ export class Watcher {
 
   // The car locks itself (LOCKED) when it starts to drive. No door opened after that: the car drives,
   // also before the first odometer value and in a traffic jam. Stale after 2 hours, then the odometer decides.
+  // A door, the trunk or the hood that is open does not fit a drive that starts. The car also shows LOCKED when you
+  // walk away from an open door: it locks itself but cannot secure itself (SECURED). The odometer then decides.
   isLockedForDriving() {
-    return this.lockStatus === 'LOCKED' && this.lockChangedAt > this.lastDoorAt && this.clock() - this.lockChangedAt < DRIVING_STALE_S;
+    return this.lockStatus === 'LOCKED' && this.lockChangedAt > this.lastDoorAt && this.clock() - this.lockChangedAt < DRIVING_STALE_S && !this.hasOpenBodyPart();
+  }
+
+  // An open door, trunk or hood. A window and the sunroof can be open while the car drives.
+  hasOpenBodyPart() {
+    return [...this.openSince.keys()].some((name) => !name.includes('.window.') && !name.includes('.sunroof.'));
   }
 
   isDriving() {
