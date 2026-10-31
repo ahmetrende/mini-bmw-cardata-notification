@@ -4,23 +4,23 @@
 
 Bu sayfa isteğe bağlı. Program bildirimleri varsayılan olarak ntfy ile yollar. Tek bir ayar, servisi Pushover olarak değiştirir.
 
-**Durum.** Programdaki kısım hazır ve testleri var. Telefondaki adımlar (hesap, uygulama ve anahtarlar) **henüz bir telefonda denenmedi**. Bu adımların her birinde bu not var. Bu sayfadaki Pushover servisiyle ilgili bilgiler pushover.net'ten geliyor. Yazar bu bilgileri doğrulamadı.
+**Durum.** Programdaki kısım hazır ve testleri var. Telefondaki adımlar (hesap, uygulama ve anahtarlar) **henüz bir telefonda denenmedi**. Bu adımların her birinde bu not var. Bu sayfadaki Pushover servisiyle ilgili bilgiler pushover.net ve destek sayfalarından geliyor. Yazar bunları 31 Ekim 2026'da kontrol etti. Hala açık olan bir bilgide not var.
 
 ## Pushover ne zaman işe yarar?
 
 [Pushover](https://pushover.net), kendi telefon uygulaması olan ücretli bir bildirim servisi.
 
 - ntfy teslim onayı vermez. Yazarın kurulumunda bazı bildirimler telefonda görünmedi. Bkz. [Kaybolan bildirimler](03-ntfy.md#kaybolan-bildirimler).
-- iPhone'da ntfy.sh push'u Google Firebase ve Apple üzerinden yollar. Kaynak: ntfy yapılandırma rehberi. Pushover'ın kendi uygulaması var. Bu yüzden Pushover push'u muhtemelen doğrudan Apple üzerinden yollar. Yazar bunu doğrulamadı.
+- iPhone'da ntfy.sh push'u Google Firebase ve Apple üzerinden yollar. Kaynak: ntfy yapılandırma rehberi. Pushover push'u doğrudan Apple'a yollar. Pushover destek sayfası "Notification storage and delivery" bölümüne göre Pushover her mesajı, telefon onaylayana kadar kendi sunucusunda tutar. Push kaybolursa uygulama, açtığında mesajı indirebilir.
 - ntfy senin için iyi çalışıyorsa ntfy'yi kullanmaya devam et. Bu sayfaya ihtiyacın yok.
 
 pushover.net'e göre yalnız acil öncelik bir alındı onayı verir. Program bu önceliği kullanmaz. Program, ntfy'de olduğu gibi, Pushover mesajı kabul edince bildirimi gönderilmiş sayar.
 
 ## Ücret
 
-- pushover.net'e göre Pushover'ın 30 günlük ücretsiz bir deneme süresi var.
-- pushover.net'e göre uygulama sonra her platform (örneğin iPhone) için bir kez 4,99 USD tutar.
-- Yazar deneme süresini ve fiyatı doğrulamadı. Satın almadan önce ikisini de pushover.net'te kontrol et.
+- pushover.net'e göre Pushover'ın 30 günlük ücretsiz bir deneme süresi var. Sayfa, 30 günün ne zaman başladığını yazmıyor.
+- pushover.net'e göre uygulama sonra her platform (örneğin iPhone) için bir kez 4,99 USD tutar. Lisans, o platformdaki kendi cihazlarının hepsini kapsar. Bir lisans birden fazla kişi için geçmez.
+- Pushover'ın fiyat destek sayfasına göre deneme bittikten sonra 24 saat içinde lisans almazsan Pushover cihazına bildirim yollamayı durdurur. Bildirim alan her kişinin kendi lisansı gerekir.
 - Lisansı kullanıcı kendisi satın alır. Bir yapay zeka aracı bu adımı yapmamalı.
 
 ## Servis seçimi
@@ -160,9 +160,10 @@ Yeniden denemeler ntfy ile aynı kurallara uyar. [4. adımdaki](05-isletim.md#lo
 
 - **Henüz bir telefonda denenmedi.** Programdaki kısmın testleri yalnız sahte bir Pushover yanıtı kullanır.
 - **Acil öncelik henüz yok.** Pushover'ın bir acil (emergency) önceliği (2) var. pushover.net'e göre bu öncelik, sen onaylayana kadar bildirimi tekrarlar ve bir alındı onayı (receipt) verir. Program bunu kullanmaz. Bu, ileride eklenebilecek bir adım.
-- **Teslim grupları.** Program `pushover_user` alanında bir teslim grubu anahtarını kabul eder. pushover.net'e göre bir grup anahtarı, kullanıcı anahtarının yerine çalışır. Grupla ilgili hiçbir adım henüz bir telefonda denenmedi.
+- **Teslim grupları.** Program `pushover_user` alanında bir teslim grubu anahtarını kabul eder. pushover.net'e göre bir grup anahtarı, kullanıcı anahtarının yerine çalışır. Uygulamanın sahibi bir abonelik bağlantısı paylaşır ve her kişi bu bağlantıyı açıp abone olur. Gruba giden bir mesaj, aylık limitte her üye için ayrı sayılır. Destek sayfası, bir üyenin kendi Pushover hesabına ve kendi lisansına ihtiyacı olup olmadığını yazmıyor. Grupla ilgili hiçbir adım henüz bir telefonda denenmedi.
+- **Aylık limit.** pushover.net'e göre ücretsiz bir hesap ayda 10.000 mesaj yollayabilir. Program günde birkaç mesaj yollar.
 - **Eski sürüme dönüş.** Pushover'dan önceki bir sürüm bildirimleri ntfy ile yollar ve `ntfy_topic` ister. Bkz. [Servis seçimi](#servis-seçimi).
-- **Hata yanıtından sonra yeniden deneme.** Pushover HTTP 4xx ile yanıt verirse program normal bekleme süreleriyle yeniden dener ([4. adıma](05-isletim.md#log-satırları-ne-anlama-gelir) bak). pushover.net'e göre bir hata yanıtından sonra yollamaya devam eden bir uygulama engellenebilir (doğrulanmadı). Geçiş yapmadan önce bunu pushover.net'te kontrol et. Log'da tekrar eden reddetmeler görürsen ntfy'ye geri dön.
+- **Hata yanıtından sonra yeniden deneme.** Pushover HTTP 4xx ile yanıt verirse program normal bekleme süreleriyle yeniden dener ([4. adıma](05-isletim.md#log-satırları-ne-anlama-gelir) bak). pushover.net'e göre 4xx yanıtı, aynı isteğin işe yaramayacağı anlamına gelir. Kısa sürede çok sayıda başarısız istek, sunucunun IP adresini bir süre engeller. İki deneme arasındaki bekleme 30 saniyeden 10 dakikaya kadar uzar. Bu yüzden risk düşük. Log'da tekrar eden reddetmeler görürsen ntfy'ye geri dön.
 - **Aynı anda tek servis.** Program ntfy'ye ve Pushover'a birlikte yollamaz.
 - **Gizlilik.** Bildirimler Pushover sunucularından geçer. Metinde konum, plaka ya da VIN yok.
 

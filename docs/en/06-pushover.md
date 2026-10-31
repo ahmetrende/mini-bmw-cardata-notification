@@ -4,23 +4,23 @@
 
 This page is optional. By default, the program sends the notifications through ntfy. One setting changes the service to Pushover.
 
-**Status.** The program part is ready and has tests. The steps on the phone (account, app and keys) are **not yet tested on a phone**. Each of these steps has this note. The facts about the Pushover service on this page come from pushover.net. The author did not verify them.
+**Status.** The program part is ready and has tests. The steps on the phone (account, app and keys) are **not yet tested on a phone**. Each of these steps has this note. The facts about the Pushover service on this page come from pushover.net and its support pages. The author checked them on 2026-10-31. A fact that is still open has a note.
 
 ## When to use Pushover
 
 [Pushover](https://pushover.net) is a paid notification service with its own phone app.
 
 - ntfy gives no delivery confirmation. In the author's setup, some notifications did not appear on the phone. See [Lost notifications](03-ntfy.md#lost-notifications).
-- On an iPhone, ntfy.sh sends the push through Google Firebase and Apple. Source: the ntfy configuration guide. Pushover has its own app, so its push probably goes directly through Apple. The author did not verify this.
+- On an iPhone, ntfy.sh sends the push through Google Firebase and Apple. Source: the ntfy configuration guide. Pushover sends the push to Apple directly. According to the Pushover support page "Notification storage and delivery", Pushover keeps each message on its server until the phone confirms it. If a push is lost, the app can download the message when you open it.
 - If ntfy works well for you, keep ntfy. You do not need this page.
 
 According to pushover.net, only the emergency priority gives a receipt. The program does not use that priority. As with ntfy, the program counts a notification as sent when Pushover accepts it.
 
 ## Cost
 
-- According to pushover.net, Pushover has a free trial of 30 days.
-- According to pushover.net, the app then costs 4.99 USD one time for each platform, for example iPhone.
-- The author did not verify the trial and the price. Check them on pushover.net before you buy.
+- According to pushover.net, Pushover has a free trial of 30 days. The page does not say when the 30 days start.
+- According to pushover.net, the app then costs 4.99 USD one time for each platform, for example iPhone. The license covers all your own devices of that platform. One license is not for more than one person.
+- According to the Pushover support page about the price, Pushover stops the delivery to your device if you buy no license within 24 hours after the trial. Each person who gets notifications needs an own license.
 - The person buys the license. An AI tool must not do this step.
 
 ## The switch
@@ -160,9 +160,10 @@ The retries follow the same rules as with ntfy. See the line `Notification faile
 
 - **Not yet tested on a phone.** The tests of the program part use a fake Pushover answer only.
 - **No emergency priority yet.** Pushover has an emergency priority (2). According to pushover.net, it repeats a notification until you confirm it, and it gives a receipt. The program does not use it. It is a possible later step.
-- **Delivery groups.** The program accepts a delivery group key in `pushover_user`. According to pushover.net, a group key works in place of a user key. No step with a group is tested on a phone yet.
+- **Delivery groups.** The program accepts a delivery group key in `pushover_user`. According to pushover.net, a group key works in place of a user key. The owner of the application shares a subscription link, and each person opens the link to subscribe. A message to a group counts once for each member in the monthly limit. The support page does not say if a member needs an own Pushover account and an own license. No step with a group is tested on a phone yet.
+- **Monthly limit.** According to pushover.net, a free account can send 10,000 messages in a month. The program sends a few messages each day.
 - **Rollback.** A release before Pushover sends through ntfy and needs `ntfy_topic`. See [The switch](#the-switch).
-- **Retries after an error answer.** After an HTTP 4xx answer from Pushover, the program tries again with the normal wait times (see [Step 4](05-operations.md#log-lines)). According to pushover.net, an app may be blocked if it keeps sending after an error answer (not verified). Check this on pushover.net before you switch. Switch back to ntfy if the log shows repeated refusals.
+- **Retries after an error answer.** After an HTTP 4xx answer from Pushover, the program tries again with the normal wait times (see [Step 4](05-operations.md#log-lines)). According to pushover.net, a 4xx answer means that the same request does not work. Many failed requests within a few minutes block the IP address of the server for a time. The wait between two tries grows from 30 seconds to 10 minutes, so the risk is low. Switch back to ntfy if the log shows repeated refusals.
 - **One service at a time.** The program does not send to ntfy and Pushover together.
 - **Privacy.** The notifications go through the Pushover servers. The text has no location, plate number or VIN.
 
