@@ -343,13 +343,15 @@ test('pushover: the fake keys have the form of Pushover keys', () => {
 
 // ---- checkConfig() and checkPushover() ----
 
-const SERVICE_ERROR = '"notify_service" must be "ntfy" or "pushover". Now it is not valid.';
+const SERVICE_ERROR = '"notify_service" must be "off", "ntfy", "pushover" or "both". Now it is not valid.';
 
-test('checkConfig: notify_service is "ntfy" or "pushover", another value is refused and not shown', () => {
+test('checkConfig: notify_service is "off", "ntfy", "pushover" or "both", another value is refused and not shown', () => {
   checkConfig({ ...DEFAULT_CONFIG });
   checkConfig({ ...DEFAULT_CONFIG, notify_service: 'ntfy' });
+  checkConfig({ ...DEFAULT_CONFIG, notify_service: 'off' });
   checkConfig({ ...pushCfg });
-  for (const value of ['Pushover', 'NTFY', 'pushover ', '', null, undefined, 1, true, ['ntfy'], { pushover: 1 }, TOKEN, 'email']) {
+  checkConfig({ ...pushCfg, notify_service: 'both' });
+  for (const value of ['Pushover', 'NTFY', 'pushover ', 'OFF', 'Both', 'off ', 'ntfy,pushover', '', null, undefined, 1, true, ['ntfy'], { pushover: 1 }, TOKEN, 'email']) {
     assert.throws(
       () => checkConfig({ ...pushCfg, notify_service: value }),
       (err) => {
@@ -754,7 +756,7 @@ test('pushover-test: missing or wrong settings give exit code 1, a clear error w
       [{ ntfy_topic: TOPIC, pushover_token: `${TOKEN.slice(0, 29)}-`, pushover_user: USER }, /^"pushover_token" must have 30 letters and digits/m],
       [{ ntfy_topic: TOPIC, pushover_token: TOKEN, pushover_user: `${USER} ` }, /^"pushover_user" must have 30 letters and digits/m],
       [{ notify_service: 'pushover', pushover_token: TOKEN, pushover_user: USER.slice(0, 20) }, /^"pushover_user" must have 30 letters and digits/m],
-      [{ notify_service: 'Pushover', pushover_token: TOKEN, pushover_user: USER }, /^"notify_service" must be "ntfy" or "pushover"\. Now it is not valid\./m],
+      [{ notify_service: 'Pushover', pushover_token: TOKEN, pushover_user: USER }, /^"notify_service" must be "off", "ntfy", "pushover" or "both"\. Now it is not valid\./m],
     ]) {
       writeConfig(config);
       const result = run(['pushover-test'], { plan: PUSHOVER_OK });
@@ -948,7 +950,7 @@ test('replay: no request with notify_service "pushover" and real-looking keys, t
     const messages = join(dir, 'messages.jsonl');
     writeFileSync(messages, `${[line(now - 4 * 3600, { [KM]: 100 }), line(now - 3 * 3600, { [WIN]: 'OPEN' })].join('\n')}\n`);
     const outputs = {};
-    for (const service of ['pushover', 'ntfy']) {
+    for (const service of ['pushover', 'ntfy', 'both', 'off']) {
       const config = join(dir, `${service}.json`);
       writeFileSync(config, JSON.stringify({ timezone: 'UTC', notify_service: service, ntfy_topic: TOPIC, pushover_token: TOKEN, pushover_user: USER }));
       // A plan that would accept every request: the tool must still send nothing.
@@ -961,6 +963,182 @@ test('replay: no request with notify_service "pushover" and real-looking keys, t
       assert.ok(!result.out.includes(TOPIC), 'no topic');
       outputs[service] = result.stdout.split('\n').filter((text) => /MINI/.test(text)).length;
     }
+    // "both" prints each notification once and "off" still prints it: the tool is a dry run for each value.
     assert.equal(outputs.pushover, outputs.ntfy);
+    assert.equal(outputs.both, outputs.ntfy);
+    assert.equal(outputs.off, outputs.ntfy);
+  });
+});
+
+// ---- notify_service "off" and "both" ----
+
+const bothCfg = { ...pushCfg, notify_service: 'both' };
+const NTFY_URL = 'https://ntfy.invalid';
+const ntfyOk = reply(NTFY_ANSWER);
+const pushoverOk = reply(ACCEPTED);
+const unreachable = () => {
+  throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+};
+// An answer for each service: the first function answers ntfy, the second answers Pushover.
+const byService = (ntfyAnswer, pushoverAnswer) => (url, options) => (String(url) === MESSAGES_URL ? pushoverAnswer(url, options) : ntfyAnswer(url, options));
+
+test('notify: "off" writes the text to the log, sends nothing and counts as sent', async () => {
+  const { result, requests, lines } = await withFetch(unreachable, () => notify({ ...pushCfg, notify_service: 'off' }, 'MINI', 'Everything is closed.', 'default', 'closed'));
+  assert.equal(result, true);
+  assert.deepEqual(requests, []);
+  assert.deepEqual(lines, ['[notifications off] MINI: Everything is closed.']);
+});
+
+test('notify: "both" sends one request to ntfy and one to Pushover, the same as each service alone', async () => {
+  const both = await withFetch(byService(ntfyOk, pushoverOk), () => notify(bothCfg, 'MINI', 'A part is open.', 'high', 'warning'));
+  assert.equal(both.result, true);
+  assert.deepEqual(both.requests.map((request) => request.url).sort(), [MESSAGES_URL, NTFY_URL]);
+  assert.equal(both.lines.filter((text) => text.startsWith('Notification accepted by ntfy: ')).length, 1);
+  assert.equal(both.lines.filter((text) => text.startsWith('Notification accepted by Pushover: ')).length, 1);
+  assert.ok(!both.lines.some((text) => text.includes('does not try again')), 'no note when both accepted');
+  assertNoSecret(both.lines.join('\n'));
+  const aloneNtfy = await withFetch(ntfyOk, () => ntfy(bothCfg, 'MINI', 'A part is open.', 'high', 'warning'));
+  const alonePushover = await withFetch(pushoverOk, () => pushover(bothCfg, 'MINI', 'A part is open.', 'high', 'warning'));
+  const sent = (requests, url) => requests.find((request) => request.url === url);
+  assert.equal(sent(both.requests, NTFY_URL).body, aloneNtfy.requests[0].body);
+  assert.deepEqual(sent(both.requests, NTFY_URL).options.headers, aloneNtfy.requests[0].options.headers);
+  assert.equal(sent(both.requests, MESSAGES_URL).body, alonePushover.requests[0].body);
+});
+
+for (const [name, ntfyAnswer, pushoverAnswer, expected, failed] of [
+  ['ntfy fails with HTTP 500', reply('error', 500), pushoverOk, true, 'ntfy'],
+  ['ntfy cannot be reached', unreachable, pushoverOk, true, 'ntfy'],
+  ['Pushover refuses with HTTP 400', ntfyOk, reply(JSON.stringify({ status: 0, errors: ['x'] }), 400), true, 'Pushover'],
+  ['Pushover cannot be reached', ntfyOk, unreachable, true, 'Pushover'],
+  ['Pushover answers 2xx without a request id', ntfyOk, reply('{}'), true, 'Pushover'],
+  ['both fail', reply('error', 500), reply('error', 500), false, null],
+]) {
+  test(`notify: "both" when ${name}, the result is ${expected}${failed ? ' and the log names the service' : ' and there is no note'}`, async () => {
+    const { result, requests, lines } = await withFetch(byService(ntfyAnswer, pushoverAnswer), () => notify(bothCfg, 'MINI', 'A part is open.', 'high', 'warning'));
+    assert.equal(result, expected);
+    assert.equal(requests.length, 2, 'each service got one request, no retry inside notify()');
+    const note = lines.filter((text) => text.includes('does not try again'));
+    assert.deepEqual(note, failed ? [`${failed} did not accept the notification. The other service did, so the program does not try again.`] : []);
+    assertNoSecret(lines.join('\n'), name);
+  });
+}
+
+test('checkConfig: "both" checks the Pushover keys like "pushover" does, "off" does not check them', () => {
+  checkConfig({ ...ntfyCfg, notify_service: 'off' });
+  checkConfig({ ...ntfyCfg, notify_service: 'off', pushover_token: 'bad', pushover_user: 'bad' });
+  checkConfig({ ...bothCfg });
+  assert.throws(() => checkConfig({ ...ntfyCfg, notify_service: 'both' }), /Set "pushover_token" in config\.json/);
+  assert.throws(() => checkConfig({ ...bothCfg, pushover_user: 'short' }), /"pushover_user" must have 30 letters and digits/);
+  assert.throws(() => checkConfig({ ...bothCfg, pushover_token: `${TOKEN.slice(0, 29)}-` }), (err) => {
+    assert.ok(!err.message.includes(TOKEN.slice(0, 20)), 'no part of the key');
+    return /"pushover_token" must have 30 letters and digits/.test(err.message);
+  });
+});
+
+test('watcher: with "both" one failed service does not repeat the notification, two failed services do', async () => {
+  let clock = 1000;
+  const watcher = new Watcher({ ...bothCfg, timezone: 'UTC', alert_after_min: 0 }, { clock: () => clock, random: () => 0.5 });
+  const down = { ntfy: false, pushover: false };
+  const answer = byService(
+    (url, options) => (down.ntfy ? new Response('error', { status: 500 }) : ntfyOk(url, options)),
+    (url, options) => (down.pushover ? new Response('error', { status: 500 }) : pushoverOk(url, options)),
+  );
+  const { requests } = await withFetch(answer, async () => {
+    down.pushover = true;
+    watcher.onData(msg({ [KM]: 100, [WIN]: 'OPEN' }), clock - 5000);
+    await watcher.check(); // ntfy accepted, Pushover failed: sent
+    assert.equal(watcher.alerted, true);
+    assert.equal(watcher.notifyFailures, 0);
+    assert.equal(watcher.retryAt, 0);
+    clock += 120;
+    await watcher.check(); // nothing to send, no repeat
+    // A second part opens with both services down: no success, a retry after 30 seconds.
+    down.ntfy = true;
+    watcher.onData(msg({ [DRIVER_DOOR]: true }), clock);
+    await watcher.check();
+    assert.equal(watcher.notifyFailures, 1);
+    assert.equal(watcher.retryAt, clock + 30);
+    clock += 30;
+    down.ntfy = false; // ntfy is back: the retry goes to the two services, ntfy accepts it
+    await watcher.check();
+    assert.equal(watcher.notifyFailures, 0);
+  });
+  assert.deepEqual(
+    requests.map((request) => (request.url === MESSAGES_URL ? 'pushover' : 'ntfy')),
+    ['ntfy', 'pushover', 'ntfy', 'pushover', 'ntfy', 'pushover'],
+    'each notification or retry goes to the two services',
+  );
+});
+
+test('run: "both" needs the ntfy topic, "off" needs neither the topic nor the Pushover keys', async () => {
+  await withProgram(({ run, writeConfig }) => {
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'both', pushover_token: TOKEN, pushover_user: USER });
+    let result = run(['run']);
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.stderr, /^Set "ntfy_topic" in config\.json/m);
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'both', ntfy_topic: TOPIC, pushover_token: TOKEN, pushover_user: USER });
+    result = run(['run']);
+    assert.match(result.stderr, /tokens\.json not found/);
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'off' });
+    result = run(['run']);
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.stderr, /tokens\.json not found/);
+    assert.deepEqual(result.requests, []);
+  });
+});
+
+test('doctor --offline: "both" needs a valid topic and the keys, "off" is a warning and needs neither', async () => {
+  await withProgram(({ dir, run, writeConfig }) => {
+    writeFileSync(join(dir, 'tokens.json'), TOKENS_FILE, { mode: 0o600 });
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'both', ntfy_topic: TOPIC, pushover_token: TOKEN, pushover_user: USER });
+    let result = run(['doctor', '--offline']);
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.stdout, /^OK {3}client_id and ntfy_topic are set\.\nOK {3}Notification service: ntfy and Pushover\. pushover_token and pushover_user have the right form\./m);
+    assert.ok(!result.stdout.includes('FAIL'), result.stdout);
+    assert.ok(!/WARN.*(ntfy_topic|Notification service)/.test(result.stdout), 'no warning about the topic or the service');
+    assertNoSecret(result.out);
+    assert.ok(!result.out.includes(TOPIC), 'the topic is not shown');
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'both', pushover_token: TOKEN, pushover_user: USER });
+    result = run(['doctor', '--offline']);
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.stdout, /^FAIL Set "ntfy_topic" in config\.json/m);
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'both', ntfy_topic: TOPIC, pushover_user: USER });
+    result = run(['doctor', '--offline']);
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.stdout, /^FAIL Set "pushover_token" in config\.json/m);
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'off' });
+    result = run(['doctor', '--offline']);
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.stdout, /^OK {3}client_id is set\.\nWARN Notification service: off\. The program sends no notification\./m);
+    assert.ok(!result.stdout.includes('FAIL'), result.stdout);
+  });
+});
+
+test('doctor: online with "both" ntfy and Pushover are both checked and both are failures, with "off" ntfy is a warning and Pushover is not asked', async () => {
+  await withProgram(({ dir, run, writeConfig }) => {
+    writeFileSync(join(dir, 'tokens.json'), TOKENS_FILE, { mode: 0o600 });
+    const base = { client_id: CLIENT_ID, ntfy_topic: TOPIC, ntfy_server: NTFY_URL, pushover_token: TOKEN, pushover_user: USER };
+    const failures = (result) => result.stdout.split('\n').filter((text) => text.startsWith('FAIL'));
+    // Everything works: Pushover accepts the check, ntfy answers.
+    writeConfig({ ...base, notify_service: 'both' });
+    let result = run(['doctor'], { plan: { 'ntfy.invalid': [{ status: 200, body: 'ok' }], ...PUSHOVER_OK } });
+    assert.ok(result.requests.some((request) => String(request.url).includes('ntfy.invalid')), 'ntfy asked');
+    assert.ok(result.requests.some((request) => String(request.url).includes('users/validate.json')), 'Pushover asked');
+    assert.ok(!result.requests.some((request) => String(request.url).includes('messages.json')), 'no message sent');
+    assert.deepEqual(failures(result), ['FAIL BMW stream server cannot be reached: blocked by the test'], 'only the blocked BMW check fails');
+    assertNoSecret(result.out);
+    // ntfy down: a failure with "both" (the service uses ntfy), without the note of Pushover.
+    result = run(['doctor'], { plan: { 'ntfy.invalid': [{ status: 503, body: 'down' }], ...PUSHOVER_OK } });
+    assert.ok(failures(result).includes('FAIL ntfy server https://ntfy.invalid: HTTP 503.'), result.stdout);
+    // Pushover refuses the keys: a failure with "both".
+    result = run(['doctor'], { plan: { 'ntfy.invalid': [{ status: 200, body: 'ok' }], 'api.pushover.net': [{ status: 400, body: { status: 0 } }] } });
+    assert.ok(failures(result).some((text) => text.includes('Pushover')), result.stdout);
+    assertNoSecret(result.out);
+    // "off": ntfy down is a warning with its own note, Pushover is not asked.
+    writeConfig({ ...base, notify_service: 'off' });
+    result = run(['doctor'], { plan: { 'ntfy.invalid': [{ status: 503, body: 'down' }], ...PUSHOVER_OK } });
+    assert.ok(result.stdout.includes('WARN ntfy server https://ntfy.invalid: HTTP 503. The service sends no notification now, so this is a warning only.'), result.stdout);
+    assert.deepEqual(failures(result), ['FAIL BMW stream server cannot be reached: blocked by the test']);
+    assert.ok(!result.requests.some((request) => String(request.url).includes('pushover')), 'Pushover not asked');
   });
 });

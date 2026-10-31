@@ -2,7 +2,7 @@
 
 [Türkçe](../tr/06-pushover.md) · [README](../../README.md)
 
-This page is optional. By default, the program sends the notifications through ntfy. One setting changes the service to Pushover.
+This page is optional. By default, the program sends the notifications through ntfy. One setting changes the service to Pushover, to both services, or to no service.
 
 **Status.** The program part is ready and has tests. The steps on the phone (account, app and keys) are **not yet tested on a phone**. Each of these steps has this note. The facts about the Pushover service on this page come from pushover.net and its support pages. The author checked them on 2026-10-31. A fact that is still open has a note.
 
@@ -12,6 +12,7 @@ This page is optional. By default, the program sends the notifications through n
 
 - ntfy gives no delivery confirmation. In the author's setup, some notifications did not appear on the phone. See [Lost notifications](03-ntfy.md#lost-notifications).
 - On an iPhone, ntfy.sh sends the push through Google Firebase and Apple. Source: the ntfy configuration guide. Pushover sends the push to Apple directly. According to the Pushover support page "Notification storage and delivery", Pushover keeps each message on its server until the phone confirms it. If a push is lost, the app can download the message when you open it.
+- You can use both services (`both`). A notification that one service loses can still come through the other. A phone with the two apps shows each notification two times.
 - If ntfy works well for you, keep ntfy. You do not need this page.
 
 According to pushover.net, only the emergency priority gives a receipt. The program does not use that priority. As with ntfy, the program counts a notification as sent when Pushover accepts it.
@@ -27,13 +28,20 @@ According to pushover.net, only the emergency priority gives a receipt. The prog
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `notify_service` | `ntfy` | The service for all notifications: `ntfy` or `pushover`. The program uses one service at a time. |
+| `notify_service` | `ntfy` | The service for all notifications: `ntfy`, `pushover`, `both` or `off`. The table below shows each value. |
 | `pushover_token` | empty | The API token of your Pushover application. 30 letters and digits. Keep it secret. |
 | `pushover_user` | empty | Your Pushover user key, or a delivery group key. 30 letters and digits. Keep it secret. |
 
-With `ntfy`, the program ignores `pushover_token` and `pushover_user`. With `pushover`, the program needs both keys and does not use `ntfy_topic`.
+| Value of `notify_service` | The notifications go to | The program needs |
+|---|---|---|
+| `ntfy` (default) | ntfy | `ntfy_topic` |
+| `pushover` | Pushover | `pushover_token` and `pushover_user` |
+| `both` | ntfy and Pushover, at the same time | `ntfy_topic`, `pushover_token` and `pushover_user` |
+| `off` | Nowhere. The program writes the text to the log. | Nothing |
 
-**Keep `ntfy_topic` in `config.json`, also with Pushover.** `ntfy-test` needs it. A rollback to a release before Pushover (`sudo bash deploy/install.sh --rollback`) needs it too. That older release does not know `notify_service`. It sends through ntfy, and without `ntfy_topic` it does not start. With Pushover, `sudo mini-watch doctor` shows a `WARN` line when `ntfy_topic` is empty or not valid.
+With `ntfy` and with `off`, the program ignores `pushover_token` and `pushover_user`. With `pushover` and with `off`, the program does not use `ntfy_topic`.
+
+**Keep `ntfy_topic` in `config.json`, also with `pushover` and `off`.** `ntfy-test` needs it. A rollback to a release before Pushover (`sudo bash deploy/install.sh --rollback`) needs it too. That older release does not know `notify_service`. It sends through ntfy, and without `ntfy_topic` it does not start. With `pushover` or `off`, `sudo mini-watch doctor` shows a `WARN` line when `ntfy_topic` is empty or not valid.
 
 ## 1. Make the account and the keys
 
@@ -121,9 +129,13 @@ sudo mini-watch doctor
 
 If the program does not start, the log shows the wrong setting. Correct it and restart the service again.
 
+**Both services.** To send through ntfy and Pushover at the same time, write `"both"` instead of `"pushover"` in step 1. The other steps stay the same. After the restart, the log shows `Notification service: ntfy and Pushover.` Use `both` while only one phone has Pushover. The other phone keeps ntfy. With `both`, an ntfy problem and an empty `ntfy_topic` are `FAIL` lines in `sudo mini-watch doctor`, not `WARN` lines.
+
+**No notification.** To stop all notifications for some time, write `"off"`. After the restart, the log shows `Notification service: off. The program sends no notification.` The command `sudo mini-watch doctor` shows a `WARN` line. The program counts each notification as sent, also with `off`. It does not send the missed notifications later. The program also keeps the state of the open parts. A reminder that is still due can come after you switch back. An "everything is closed" notification can come for a part that closes later.
+
 ## 5. Switch back to ntfy
 
-1. Open `config.json`. In the line with `"notify_service"`, change the value `"pushover"` to `"ntfy"`. Do not change the other characters of the line.
+1. Open `config.json`. In the line with `"notify_service"`, change the value (`"pushover"`, `"both"` or `"off"`) to `"ntfy"`. Do not change the other characters of the line.
 2. Check the file before the restart: `sudo mini-watch doctor --offline`. The output must have no `FAIL` line.
 3. Restart the service: `sudo systemctl restart mini-watch`.
 
@@ -133,7 +145,7 @@ The ntfy service needs `ntfy_topic`. If you deleted that setting, write it again
 
 - The default service is `ntfy`. A `config.json` without `notify_service` works as before.
 - The ntfy part does not change. `ntfy-test`, `ntfy-check` and the `ntfy_*` settings work as before. They always use ntfy.
-- The texts, the wait times, the reminders and the retries are the same for the two services.
+- The texts, the wait times, the reminders and the retries are the same for ntfy and Pushover. With `both`, a failure of one service gives no retry (see the Limits section).
 - With Pushover, the emoji also comes from `ntfy_tags`. The program sends no tags to Pushover. It puts the emoji at the start of the title.
 - The program knows these tag names: `warning` (⚠️), `rotating_light` (🚨), `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `blue_car` (🚙), `car` (🚗). Another tag name gives no emoji.
 - The notifications "a part is open" and "a part is still open" get Pushover priority 1 (high). The other notifications get priority 0 (normal).
@@ -146,13 +158,14 @@ The ntfy service needs `ntfy_topic`. If you deleted that setting, write it again
 | Log line | Meaning |
 |---|---|
 | `Notification accepted by Pushover: ... (request <id>, HTTP 200)` | Pushover accepted the notification. This is not a delivery confirmation. |
-| `Notification not confirmed by Pushover: ...` | Pushover answered with HTTP 2xx, but the answer has no request id. The program does not count the notification as sent. It tries again later, as with ntfy. |
+| `Notification not confirmed by Pushover: ...` | Pushover answered with HTTP 2xx, but the answer has no request id. The program does not count the notification as sent. It tries again later, as with ntfy. With `both`, it tries again only if ntfy failed too. |
 | `Notification failed: HTTP 400` or `HTTP 401` | Pushover refused the message. A key can be wrong. Run `sudo mini-watch doctor`. |
 | `Notification failed: HTTP 429` | Pushover refused the message. A possible cause is a limit of Pushover. The program tries again later. |
 | `Notification failed: HTTP 307, a redirect. ...` | Pushover answered with a redirect. The request has the token, so the program does not follow the redirect. It tries again later. |
 | `Notification failed: no answer from Pushover (...)` or `Notification failed: no answer from Pushover in 15 seconds` | The server could not reach Pushover, or Pushover did not answer in time. The text in parentheses is the error code. The program tries again later. |
 | `Set "pushover_token" ...` or `"pushover_user" must have 30 letters and digits ...` | The program did not start. A key in `config.json` is missing or wrong. The text does not show the value. |
-| `"notify_service" must be "ntfy" or "pushover" ...` | The program did not start. Correct the value in `config.json`. |
+| `"notify_service" must be "off", "ntfy", "pushover" or "both" ...` | The program did not start. Correct the value in `config.json`. |
+| `ntfy did not accept the notification. The other service did, so the program does not try again.` (or `Pushover did not ...`) | Only with `both`. One service accepted the notification and the other did not. An earlier line names the reason. The program counts the notification as sent. |
 
 The retries follow the same rules as with ntfy. See the line `Notification failed` in [Step 4](05-operations.md#log-lines).
 
@@ -162,9 +175,9 @@ The retries follow the same rules as with ntfy. See the line `Notification faile
 - **No emergency priority yet.** Pushover has an emergency priority (2). According to pushover.net, it repeats a notification until you confirm it, and it gives a receipt. The program does not use it. It is a possible later step.
 - **Delivery groups.** The program accepts a delivery group key in `pushover_user`. According to pushover.net, a group key works in place of a user key. The owner of the application shares a subscription link, and each person opens the link to subscribe. A message to a group counts once for each member in the monthly limit. The support page does not say if a member needs an own Pushover account and an own license. No step with a group is tested on a phone yet.
 - **Monthly limit.** According to pushover.net, a free account can send 10,000 messages in a month. The program sends a few messages each day.
-- **Rollback.** A release before Pushover sends through ntfy and needs `ntfy_topic`. See [The switch](#the-switch).
+- **Rollback.** A release before Pushover sends through ntfy and needs `ntfy_topic`. A release with `pushover` but without `both` and `off` does not start when `notify_service` is `both` or `off`. Before a rollback, set `notify_service` to `ntfy` or `pushover`. See [The switch](#the-switch).
 - **Retries after an error answer.** After an HTTP 4xx answer from Pushover, the program tries again with the normal wait times (see [Step 4](05-operations.md#log-lines)). According to pushover.net, a 4xx answer means that the same request does not work. Many failed requests within a few minutes block the IP address of the server for a time. The wait between two tries grows from 30 seconds to 10 minutes, so the risk is low. Switch back to ntfy if the log shows repeated refusals.
-- **One service at a time.** The program does not send to ntfy and Pushover together.
+- **Two services.** With `both`, a notification counts as sent when one service accepts it. If the other service fails, the program does not try again. That service misses this notification. If both services fail, the program tries again as with one service. The retry goes to the two services again.
 - **Privacy.** The notifications go through the Pushover servers. The text has no location, plate number or VIN.
 
 **Next step:** Go back to [Step 4, run and update the program](05-operations.md).

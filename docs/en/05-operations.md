@@ -38,6 +38,9 @@ gcloud compute ssh cardata-server --zone=us-central1-a --tunnel-through-iap --co
 | `Notification accepted by ntfy: ...` | ntfy accepted a notification. The line has the title, the text, the message id, the HTTP status, the time and the expiry time (UTC). The time and the expiry time show only when ntfy sends valid values. "Accepted" means that ntfy stored the message. It does not mean that the phone got it. ntfy gives no delivery confirmation. Older log lines say `Notification sent: ...`. They have no HTTP status, no time and no expiry time. To list all sent notifications: `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)"`. |
 | `Notification not confirmed: ...` | ntfy answered with HTTP 2xx, but the answer has no message id. The program does not count the notification as sent. It tries again later, as after `Notification failed`. If the line repeats, check `ntfy_server` in `config.json`. |
 | `Notification service: Pushover.` | The program started with `notify_service` set to `pushover`. With ntfy, this line does not show. See [Pushover](06-pushover.md). |
+| `Notification service: ntfy and Pushover.` | The program started with `notify_service` set to `both`. See [Pushover](06-pushover.md). |
+| `Notification service: off. The program sends no notification.` | The program started with `notify_service` set to `off`. See [Pushover](06-pushover.md). |
+| `ntfy did not accept the notification. The other service did, so the program does not try again.` (or `Pushover did not ...`) | Only with `both`. One service accepted the notification and the other did not. An earlier line names the reason. See [Pushover](06-pushover.md). |
 | `Notification accepted by Pushover: ...` | Pushover accepted a notification. The line has the title, the text, the request id and the HTTP status. It is not a delivery confirmation. |
 | `Notification not confirmed by Pushover: ...` | Pushover answered with HTTP 2xx, but the answer has no request id. The program does not count the notification as sent. It tries again later, as after `Notification failed`. |
 | `The token expires soon. Refreshing it.` | The normal refresh. It happens each hour. |
@@ -74,9 +77,9 @@ sudo systemctl restart mini-watch
 | `silence_alert_hours` | 0 (off) | One notification when the car sends no data for this many hours. The car sends nothing while it sleeps, so a long parked time also gives this notification. |
 | `vehicle_names` | `{}` | Names for the cars of an account with more than one car. Example: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | The address of your own ntfy server |
-| `notify_service` | `ntfy` | The service for all notifications: `ntfy` or `pushover`. See [Pushover](06-pushover.md). |
-| `pushover_token` | empty | The API token of your Pushover application (30 letters and digits). Secret. Only used with `pushover` and by `pushover-test`. |
-| `pushover_user` | empty | Your Pushover user key or a delivery group key (30 letters and digits). Secret. Only used with `pushover` and by `pushover-test`. |
+| `notify_service` | `ntfy` | The service for all notifications: `ntfy`, `pushover`, `both` or `off`. See [Pushover](06-pushover.md). |
+| `pushover_token` | empty | The API token of your Pushover application (30 letters and digits). Secret. Only used with `pushover` and `both`, and by `pushover-test`. |
+| `pushover_user` | empty | Your Pushover user key or a delivery group key (30 letters and digits). Secret. Only used with `pushover` and `both`, and by `pushover-test`. |
 
 ## Update the program
 

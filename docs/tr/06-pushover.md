@@ -2,7 +2,7 @@
 
 [English](../en/06-pushover.md) · [README](../../README.tr.md)
 
-Bu sayfa isteğe bağlı. Program bildirimleri varsayılan olarak ntfy ile yollar. Tek bir ayar, servisi Pushover olarak değiştirir.
+Bu sayfa isteğe bağlı. Program bildirimleri varsayılan olarak ntfy ile yollar. Tek bir ayar, servisi Pushover'a, iki servise birden ya da hiçbir servise çevirir.
 
 **Durum.** Programdaki kısım hazır ve testleri var. Telefondaki adımlar (hesap, uygulama ve anahtarlar) **henüz bir telefonda denenmedi**. Bu adımların her birinde bu not var. Bu sayfadaki Pushover servisiyle ilgili bilgiler pushover.net ve destek sayfalarından geliyor. Yazar bunları 31 Ekim 2026'da kontrol etti. Hala açık olan bir bilgide not var.
 
@@ -12,6 +12,7 @@ Bu sayfa isteğe bağlı. Program bildirimleri varsayılan olarak ntfy ile yolla
 
 - ntfy teslim onayı vermez. Yazarın kurulumunda bazı bildirimler telefonda görünmedi. Bkz. [Kaybolan bildirimler](03-ntfy.md#kaybolan-bildirimler).
 - iPhone'da ntfy.sh push'u Google Firebase ve Apple üzerinden yollar. Kaynak: ntfy yapılandırma rehberi. Pushover push'u doğrudan Apple'a yollar. Pushover destek sayfası "Notification storage and delivery" bölümüne göre Pushover her mesajı, telefon onaylayana kadar kendi sunucusunda tutar. Push kaybolursa uygulama, açtığında mesajı indirebilir.
+- İki servisi birlikte kullanabilirsin (`both`). Bir servisin kaybettiği bildirim, diğer servisten yine gelebilir. İki uygulamanın da kurulu olduğu bir telefon her bildirimi iki kez gösterir.
 - ntfy senin için iyi çalışıyorsa ntfy'yi kullanmaya devam et. Bu sayfaya ihtiyacın yok.
 
 pushover.net'e göre yalnız acil öncelik bir alındı onayı verir. Program bu önceliği kullanmaz. Program, ntfy'de olduğu gibi, Pushover mesajı kabul edince bildirimi gönderilmiş sayar.
@@ -27,13 +28,20 @@ pushover.net'e göre yalnız acil öncelik bir alındı onayı verir. Program bu
 
 | Ayar | Varsayılan | Anlamı |
 |---|---|---|
-| `notify_service` | `ntfy` | Tüm bildirimleri yollayan servis: `ntfy` veya `pushover`. Program aynı anda tek bir servis kullanır. |
+| `notify_service` | `ntfy` | Tüm bildirimleri yollayan servis: `ntfy`, `pushover`, `both` veya `off`. Aşağıdaki tablo her değeri gösteriyor. |
 | `pushover_token` | boş | Pushover uygulamanın API token'ı. 30 harf ve rakam. Gizli tut. |
 | `pushover_user` | boş | Pushover kullanıcı anahtarın (user key) ya da bir teslim grubu anahtarı (delivery group key). 30 harf ve rakam. Gizli tut. |
 
-`ntfy` seçiliyken program `pushover_token` ve `pushover_user` ayarlarını kullanmaz. `pushover` seçiliyken iki anahtar da gerekir ve program `ntfy_topic` ayarını kullanmaz.
+| `notify_service` değeri | Bildirimler nereye gider | Programın istediği ayarlar |
+|---|---|---|
+| `ntfy` (varsayılan) | ntfy | `ntfy_topic` |
+| `pushover` | Pushover | `pushover_token` ve `pushover_user` |
+| `both` | ntfy'ye ve Pushover'a, aynı anda | `ntfy_topic`, `pushover_token` ve `pushover_user` |
+| `off` | Hiçbir yere. Program metni log'a yazar. | Hiçbiri |
 
-**Pushover kullansan da `ntfy_topic` ayarını `config.json` içinde tut.** `ntfy-test` bu ayarı ister. Pushover'dan önceki bir sürüme dönüş (`sudo bash deploy/install.sh --rollback`) de bu ayarı ister. O eski sürüm `notify_service` ayarını tanımaz. Bildirimleri ntfy ile yollar ve `ntfy_topic` olmadan başlamaz. Pushover seçiliyken `ntfy_topic` boş ya da geçersizse `sudo mini-watch doctor` bir `WARN` satırı gösterir.
+`ntfy` ve `off` seçiliyken program `pushover_token` ve `pushover_user` ayarlarını kullanmaz. `pushover` ve `off` seçiliyken program `ntfy_topic` ayarını kullanmaz.
+
+**`pushover` ve `off` seçiliyken de `ntfy_topic` ayarını `config.json` içinde tut.** `ntfy-test` bu ayarı ister. Pushover'dan önceki bir sürüme dönüş (`sudo bash deploy/install.sh --rollback`) de bu ayarı ister. O eski sürüm `notify_service` ayarını tanımaz. Bildirimleri ntfy ile yollar ve `ntfy_topic` olmadan başlamaz. `pushover` veya `off` seçiliyken `ntfy_topic` boş ya da geçersizse `sudo mini-watch doctor` bir `WARN` satırı gösterir.
 
 ## 1. Hesabı ve anahtarları oluştur
 
@@ -121,9 +129,13 @@ sudo mini-watch doctor
 
 Program başlamazsa log hatalı ayarı gösterir. Ayarı düzelt ve servisi yeniden başlat.
 
+**İki servis birden.** ntfy ve Pushover ile aynı anda bildirim yollamak için 1. adımda `"pushover"` yerine `"both"` yaz. Diğer adımlar aynı kalır. Yeniden başlatmadan sonra log `Notification service: ntfy and Pushover.` satırını gösterir. Yalnız bir telefonda Pushover varken `both` kullan. Diğer telefon ntfy ile devam eder. `both` seçiliyken ntfy sorunu ve boş `ntfy_topic`, `sudo mini-watch doctor` çıktısında `WARN` değil `FAIL` satırı olur.
+
+**Bildirim yok.** Tüm bildirimleri bir süre durdurmak için `"off"` yaz. Yeniden başlatmadan sonra log `Notification service: off. The program sends no notification.` satırını gösterir. `sudo mini-watch doctor` komutu bir `WARN` satırı gösterir. Program, `off` seçiliyken de her bildirimi gönderilmiş sayar. Kaçırılan bildirimleri sonradan yollamaz. Program açık parçaların durumunu da saklar. Zamanı gelmiş bir hatırlatma, ayarı geri çevirdikten sonra gelebilir. Sonradan kapanan bir parça için "her şey kapalı" bildirimi de gelebilir.
+
 ## 5. ntfy'ye geri dön
 
-1. `config.json` dosyasını aç. `"notify_service"` satırında `"pushover"` değerini `"ntfy"` yap. Satırın diğer karakterlerini değiştirme.
+1. `config.json` dosyasını aç. `"notify_service"` satırında değeri (`"pushover"`, `"both"` veya `"off"`) `"ntfy"` yap. Satırın diğer karakterlerini değiştirme.
 2. Yeniden başlatmadan önce dosyayı kontrol et: `sudo mini-watch doctor --offline`. Çıktıda `FAIL` satırı olmamalı.
 3. Servisi yeniden başlat: `sudo systemctl restart mini-watch`.
 
@@ -133,7 +145,7 @@ ntfy servisi `ntfy_topic` ayarını ister. Bu ayarı sildiysen yeniden başlatma
 
 - Varsayılan servis `ntfy`. `notify_service` içermeyen bir `config.json` eskisi gibi çalışır.
 - ntfy kısmı değişmez. `ntfy-test`, `ntfy-check` ve `ntfy_*` ayarları eskisi gibi çalışır. Bunlar her zaman ntfy kullanır.
-- Metinler, bekleme süreleri, hatırlatmalar ve yeniden denemeler iki serviste de aynı.
+- Metinler, bekleme süreleri, hatırlatmalar ve yeniden denemeler ntfy ve Pushover için aynı. `both` seçiliyken bir servisin başarısızlığı yeniden denemeye yol açmaz (Sınırlar bölümüne bak).
 - Pushover'da da emoji `ntfy_tags` ayarından gelir. Program Pushover'a etiket yollamaz. Emojiyi başlığın başına koyar.
 - Program şu etiket adlarını tanır: `warning` (⚠️), `rotating_light` (🚨), `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `blue_car` (🚙), `car` (🚗). Başka bir etiket adı emoji vermez.
 - "Açık parça var" ve "hala açık parça var" bildirimleri Pushover'da 1 (yüksek) önceliğini alır. Diğer bildirimler 0 (normal) önceliğini alır.
@@ -146,13 +158,14 @@ ntfy servisi `ntfy_topic` ayarını ister. Bu ayarı sildiysen yeniden başlatma
 | Log satırı | Anlamı |
 |---|---|
 | `Notification accepted by Pushover: ... (request <id>, HTTP 200)` | Pushover bildirimi kabul etti. Bu bir teslim onayı değil. |
-| `Notification not confirmed by Pushover: ...` | Pushover HTTP 2xx ile yanıt verdi ama yanıtta istek kimliği yok. Program bildirimi gönderilmiş saymaz. ntfy'de olduğu gibi daha sonra yeniden dener. |
+| `Notification not confirmed by Pushover: ...` | Pushover HTTP 2xx ile yanıt verdi ama yanıtta istek kimliği yok. Program bildirimi gönderilmiş saymaz. ntfy'de olduğu gibi daha sonra yeniden dener. `both` seçiliyken yalnız ntfy de başarısız olduysa yeniden dener. |
 | `Notification failed: HTTP 400` veya `HTTP 401` | Pushover mesajı reddetti. Bir anahtar hatalı olabilir. `sudo mini-watch doctor` komutunu çalıştır. |
 | `Notification failed: HTTP 429` | Pushover mesajı reddetti. Olası bir sebep, Pushover'ın bir sınırı. Program daha sonra yeniden dener. |
 | `Notification failed: HTTP 307, a redirect. ...` | Pushover bir yönlendirmeyle (redirect) yanıt verdi. İstekte token var. Bu yüzden program yönlendirmeyi izlemez. Daha sonra yeniden dener. |
 | `Notification failed: no answer from Pushover (...)` veya `Notification failed: no answer from Pushover in 15 seconds` | Sunucu Pushover'a ulaşamadı ya da Pushover zamanında yanıt vermedi. Parantez içindeki metin hata kodu. Program daha sonra yeniden dener. |
 | `Set "pushover_token" ...` veya `"pushover_user" must have 30 letters and digits ...` | Program başlamadı. `config.json` içindeki bir anahtar eksik ya da hatalı. Metin değeri göstermez. |
-| `"notify_service" must be "ntfy" or "pushover" ...` | Program başlamadı. `config.json` içindeki değeri düzelt. |
+| `"notify_service" must be "off", "ntfy", "pushover" or "both" ...` | Program başlamadı. `config.json` içindeki değeri düzelt. |
+| `ntfy did not accept the notification. The other service did, so the program does not try again.` (veya `Pushover did not ...`) | Yalnız `both` seçiliyken görünür. Bir servis bildirimi kabul etti, diğeri etmedi. Daha önceki bir satır sebebi söyler. Program bildirimi gönderilmiş sayar. |
 
 Yeniden denemeler ntfy ile aynı kurallara uyar. [4. adımdaki](05-isletim.md#log-satırları-ne-anlama-gelir) `Notification failed` satırına bak.
 
@@ -162,9 +175,9 @@ Yeniden denemeler ntfy ile aynı kurallara uyar. [4. adımdaki](05-isletim.md#lo
 - **Acil öncelik henüz yok.** Pushover'ın bir acil (emergency) önceliği (2) var. pushover.net'e göre bu öncelik, sen onaylayana kadar bildirimi tekrarlar ve bir alındı onayı (receipt) verir. Program bunu kullanmaz. Bu, ileride eklenebilecek bir adım.
 - **Teslim grupları.** Program `pushover_user` alanında bir teslim grubu anahtarını kabul eder. pushover.net'e göre bir grup anahtarı, kullanıcı anahtarının yerine çalışır. Uygulamanın sahibi bir abonelik bağlantısı paylaşır ve her kişi bu bağlantıyı açıp abone olur. Gruba giden bir mesaj, aylık limitte her üye için ayrı sayılır. Destek sayfası, bir üyenin kendi Pushover hesabına ve kendi lisansına ihtiyacı olup olmadığını yazmıyor. Grupla ilgili hiçbir adım henüz bir telefonda denenmedi.
 - **Aylık limit.** pushover.net'e göre ücretsiz bir hesap ayda 10.000 mesaj yollayabilir. Program günde birkaç mesaj yollar.
-- **Eski sürüme dönüş.** Pushover'dan önceki bir sürüm bildirimleri ntfy ile yollar ve `ntfy_topic` ister. Bkz. [Servis seçimi](#servis-seçimi).
+- **Eski sürüme dönüş.** Pushover'dan önceki bir sürüm bildirimleri ntfy ile yollar ve `ntfy_topic` ister. `pushover` değerini bilen ama `both` ve `off` değerlerini bilmeyen bir sürüm, `notify_service` değeri `both` veya `off` iken başlamaz. Eski sürüme dönmeden önce `notify_service` değerini `ntfy` veya `pushover` yap. Bkz. [Servis seçimi](#servis-seçimi).
 - **Hata yanıtından sonra yeniden deneme.** Pushover HTTP 4xx ile yanıt verirse program normal bekleme süreleriyle yeniden dener ([4. adıma](05-isletim.md#log-satırları-ne-anlama-gelir) bak). pushover.net'e göre 4xx yanıtı, aynı isteğin işe yaramayacağı anlamına gelir. Kısa sürede çok sayıda başarısız istek, sunucunun IP adresini bir süre engeller. İki deneme arasındaki bekleme 30 saniyeden 10 dakikaya kadar uzar. Bu yüzden risk düşük. Log'da tekrar eden reddetmeler görürsen ntfy'ye geri dön.
-- **Aynı anda tek servis.** Program ntfy'ye ve Pushover'a birlikte yollamaz.
+- **İki servis.** `both` seçiliyken bir servis bildirimi kabul edince bildirim gönderilmiş sayılır. Diğer servis başarısız olursa program yeniden denemez. O servis bu bildirimi kaçırır. İki servis de başarısız olursa program, tek servisteki gibi yeniden dener. Yeniden deneme iki servise birden gider.
 - **Gizlilik.** Bildirimler Pushover sunucularından geçer. Metinde konum, plaka ya da VIN yok.
 
 **Sıradaki adım:** [4. adıma, programı çalıştır ve güncelle](05-isletim.md) sayfasına geri dön.

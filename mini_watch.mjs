@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Listens to the BMW/MINI CarData stream. Sends a phone notification through ntfy (default) or Pushover
+// Listens to the BMW/MINI CarData stream. Sends a phone notification through ntfy (default), Pushover or both
 // (notify_service) when a door, window, sunroof, trunk or hood stays open after you park.
 //
 //   node mini_watch.mjs login             # once: get a device code, approve it in the browser
@@ -67,8 +67,12 @@ const SAVE_EVERY_S = 60; // Save the open parts at most once a minute. Save at o
 const PROGRESS_LIMIT_S = 600; // The watchdog ping stops when the main loop did not run for 10 minutes.
 const EXAMPLE_TOPIC = 'mini-your-long-random-name'; // The example topic of older versions. Everybody knows it.
 const MIN_TOPIC_LENGTH = 16;
-// The notification services. One of them sends all notifications (notify_service). ntfy is the default.
-const NOTIFY_SERVICES = ['ntfy', 'pushover'];
+// The values of notify_service: "off" sends nothing, "ntfy" (the default) and "pushover" send through one service,
+// "both" sends each notification through ntfy and through Pushover.
+const NOTIFY_SERVICES = ['off', 'ntfy', 'pushover', 'both'];
+const usesPushover = (cfg) => cfg.notify_service === 'pushover' || cfg.notify_service === 'both';
+// A value that is not set uses ntfy, as before this setting.
+const usesNtfy = (cfg) => cfg.notify_service !== 'pushover' && cfg.notify_service !== 'off';
 // Pushover. The addresses are fixed: they are not settings. A token and a user key have 30 letters and digits.
 const PUSHOVER_MESSAGES_URL = 'https://api.pushover.net/1/messages.json';
 const PUSHOVER_VALIDATE_URL = 'https://api.pushover.net/1/users/validate.json';
@@ -306,10 +310,11 @@ export const DEFAULT_CONFIG = {
   // The emoji at the start of the title. An ntfy tag name for each kind of notification. A comma gives more
   // than one tag. The list of names: https://docs.ntfy.sh/emojis/. A missing key keeps its default.
   ntfy_tags: { open: 'warning', still_open: 'warning', closed: 'white_check_mark', locked: 'lock', silence: 'grey_question', test: 'car' },
-  // The service that sends the notifications: "ntfy" or "pushover". See docs/en/06-pushover.md.
+  // The service that sends the notifications: "ntfy", "pushover", "both" (ntfy and Pushover) or "off" (no
+  // notification). See docs/en/06-pushover.md.
   notify_service: 'ntfy',
   // Pushover: the API token of the application and the user key (or a delivery group key). Secrets.
-  // The program checks and uses them only when notify_service is "pushover", and in the command "pushover-test".
+  // The program checks and uses them only when notify_service is "pushover" or "both", and in the command "pushover-test".
   pushover_token: '',
   pushover_user: '',
 };
@@ -383,9 +388,9 @@ export function checkConfig(cfg) {
   if (!serverUrl) throw new Error('"ntfy_server" must be an address like "https://ntfy.sh". Now it is not valid.');
   if (serverUrl.username || serverUrl.password) throw new Error('"ntfy_server" must not have a user name or a password. The program does not use them.');
   // The text does not show the value: a token or a key can be in the wrong field.
-  if (!NOTIFY_SERVICES.includes(cfg.notify_service)) throw new Error('"notify_service" must be "ntfy" or "pushover". Now it is not valid.');
-  // With "ntfy" the Pushover settings are not used, so they are not checked.
-  if (cfg.notify_service === 'pushover') checkPushover(cfg);
+  if (!NOTIFY_SERVICES.includes(cfg.notify_service)) throw new Error('"notify_service" must be "off", "ntfy", "pushover" or "both". Now it is not valid.');
+  // With "ntfy" and "off" the Pushover settings are not used, so they are not checked.
+  if (usesPushover(cfg)) checkPushover(cfg);
   const known = new Set([...Object.keys(DEFAULT_CONFIG), 'client_id']);
   const unknown = Object.keys(cfg).filter((key) => !known.has(key));
   if (unknown.length) log(`Warning: config.json has unknown settings: ${unknown.join(', ')}. The program ignores them.`);
@@ -833,9 +838,31 @@ export async function pushover(cfg, title, text, priority = 'high', tags = 'warn
   }
 }
 
-// Sends one notification through the service of notify_service: ntfy (the default) or Pushover. The arguments
-// go unchanged to ntfy() or pushover(). Each value other than "pushover" uses ntfy, as before this setting.
-export function notify(cfg, title, text, priority, tags) {
+// Sends one notification through the service of notify_service. The arguments go unchanged to ntfy() or
+// pushover(). "off" writes the text to the log and sends nothing. "both" sends to the two services at the same
+// time. It counts as sent when one service accepted it: a retry after the other service failed would send the
+// notification again through the service that accepted it. A value that is not set uses ntfy, as before this setting.
+export async function notify(cfg, title, text, priority, tags) {
+  if (cfg.notify_service === 'off') {
+    log(`[notifications off] ${title}: ${text}`);
+    return true;
+  }
+  if (cfg.notify_service === 'both') {
+    // Each service handles its own errors and returns false. An error that gets out is a bug: the log names its kind.
+    const settle = (name, sending) =>
+      sending.catch((err) => {
+        log(`${name} failed with an unexpected error: ${String(err?.name ?? 'Error')}`);
+        return false;
+      });
+    const [viaNtfy, viaPushover] = await Promise.all([
+      settle('ntfy', ntfy(cfg, title, text, priority, tags)),
+      settle('Pushover', pushover(cfg, title, text, priority, tags)),
+    ]);
+    if (viaNtfy !== viaPushover) {
+      log(`${viaNtfy ? 'Pushover' : 'ntfy'} did not accept the notification. The other service did, so the program does not try again.`);
+    }
+    return viaNtfy || viaPushover;
+  }
   if (cfg.notify_service === 'pushover') return pushover(cfg, title, text, priority, tags);
   return ntfy(cfg, title, text, priority, tags);
 }
@@ -1672,8 +1699,10 @@ function startWatchdog() {
 }
 
 async function run(cfg) {
-  // With the default service (ntfy) the log does not change. With Pushover it says so once at the start.
+  // With the default service (ntfy) the log does not change. Each other value says so once at the start.
   if (cfg.notify_service === 'pushover') log('Notification service: Pushover.');
+  if (cfg.notify_service === 'both') log('Notification service: ntfy and Pushover.');
+  if (cfg.notify_service === 'off') log('Notification service: off. The program sends no notification.');
   const fleet = new Fleet(cfg, { stateFile: STATE });
   fleet.loadSnapshot();
   await replayRecent(fleet);
@@ -1831,11 +1860,12 @@ async function doctor({ offline = false } = {}) {
     cfg = loadConfig();
     report('OK', 'config.json is valid.');
     requireClientId(cfg);
-    if (cfg.notify_service === 'pushover') {
+    if (cfg.notify_service === 'pushover' || cfg.notify_service === 'off') {
       // loadConfig() checked the form of the Pushover keys. The lines do not show the keys.
       report('OK', 'client_id is set.');
-      report('OK', 'Notification service: Pushover. pushover_token and pushover_user have the right form.');
-      // Pushover does not need the topic. A release before Pushover (install.sh --rollback) and ntfy-test need it.
+      if (cfg.notify_service === 'pushover') report('OK', 'Notification service: Pushover. pushover_token and pushover_user have the right form.');
+      else report('WARN', 'Notification service: off. The program sends no notification.');
+      // These two values do not need the topic. A release before Pushover (install.sh --rollback) and ntfy-test need it.
       try {
         checkTopic(cfg);
       } catch {
@@ -1844,6 +1874,7 @@ async function doctor({ offline = false } = {}) {
     } else {
       checkTopic(cfg);
       report('OK', 'client_id and ntfy_topic are set.');
+      if (cfg.notify_service === 'both') report('OK', 'Notification service: ntfy and Pushover. pushover_token and pushover_user have the right form.');
     }
   } catch (err) {
     report('FAIL', err.message);
@@ -1897,10 +1928,10 @@ async function doctor({ offline = false } = {}) {
   if (offline) return failed ? 1 : 0;
 
   if (cfg) {
-    // With Pushover the service does not use ntfy, so an ntfy problem is a warning. With ntfy nothing changes.
-    const pushoverOn = cfg.notify_service === 'pushover';
+    // With Pushover or with "off" the service does not use ntfy, so an ntfy problem is a warning. With ntfy and with "both" nothing changes.
+    const pushoverOn = !usesNtfy(cfg);
     const ntfyProblem = pushoverOn ? 'WARN' : 'FAIL';
-    const ntfyNote = pushoverOn ? ' The service uses Pushover now, so this is a warning only.' : '';
+    const ntfyNote = !pushoverOn ? '' : cfg.notify_service === 'off' ? ' The service sends no notification now, so this is a warning only.' : ' The service uses Pushover now, so this is a warning only.';
     try {
       const resp = await fetch(new URL('/v1/health', cfg.ntfy_server), { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
       await resp.body?.cancel();
@@ -1910,8 +1941,8 @@ async function doctor({ offline = false } = {}) {
       const reason = pushoverOn ? `${String(err.message).replace(/\.+$/, '')}.` : err.message;
       report(ntfyProblem, `ntfy server ${cfg.ntfy_server} cannot be reached: ${reason}${ntfyNote}`);
     }
-    // Only with notify_service "pushover". Pushover checks the token and the user key and sends no notification.
-    if (cfg.notify_service === 'pushover') {
+    // Only with notify_service "pushover" or "both". Pushover checks the token and the user key and sends no notification.
+    if (usesPushover(cfg)) {
       const result = await validatePushover(cfg);
       report(result.ok ? 'OK' : 'FAIL', result.text);
     }
@@ -1931,8 +1962,8 @@ async function main() {
   try {
     const cfg = loadConfig();
     if (command === 'login' || command === 'run') requireClientId(cfg);
-    // With Pushover, "run" needs no ntfy topic. ntfy-test and ntfy-check always need it.
-    if ((command === 'run' && cfg.notify_service !== 'pushover') || command === 'ntfy-test' || command === 'ntfy-check') checkTopic(cfg);
+    // With Pushover or with "off", "run" needs no ntfy topic. ntfy-test and ntfy-check always need it.
+    if ((command === 'run' && usesNtfy(cfg)) || command === 'ntfy-test' || command === 'ntfy-check') checkTopic(cfg);
     // pushover-test works with each notify_service, so it checks the Pushover keys itself.
     if (command === 'pushover-test') checkPushover(cfg);
     if (command === 'run' && !existsSync(TOKENS)) {

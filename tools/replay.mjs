@@ -19,8 +19,9 @@ if (!messagesFile) {
 }
 
 const fileConfig = configFile ? JSON.parse(readFileSync(configFile, 'utf8')) : {};
-// An empty topic and empty Pushover keys: print, do not send. This is true for each notify_service.
-const cfg = { ...DEFAULT_CONFIG, ...fileConfig, ntfy_topic: '', pushover_token: '', pushover_user: '' };
+// An empty topic and empty Pushover keys: print, do not send. The service is "ntfy" for each notify_service:
+// with "both" each notification would print twice, and with "off" it would not print.
+const cfg = { ...DEFAULT_CONFIG, ...fileConfig, notify_service: 'ntfy', ntfy_topic: '', pushover_token: '', pushover_user: '' };
 const end = Date.now() / 1000;
 const start = end - hours * 3600;
 

@@ -41,7 +41,7 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 | Login | The log line "Login done. Granted scope:" has `cardata:streaming:read`. |
 | Service | The log shows "Connected to the stream." and "Subscribed: qos0". |
 | Notification | `sudo mini-watch ntfy-test` puts a message on the phone. The output shows `Notification accepted by ntfy` with the message id. |
-| Pushover (optional) | `sudo mini-watch pushover-test` puts a message on the phone. The output shows `Notification accepted by Pushover` with the request id. With `notify_service` set to `pushover`, `sudo mini-watch doctor` shows `Pushover accepted the token and the user key`. Not yet tested on a phone. |
+| Pushover (optional) | `sudo mini-watch pushover-test` puts a message on the phone. The output shows `Notification accepted by Pushover` with the request id. With `notify_service` set to `pushover` or `both`, `sudo mini-watch doctor` shows `Pushover accepted the token and the user key`. Not yet tested on a phone. |
 | Whole setup | `sudo mini-watch doctor` shows no `FAIL` line. It sends nothing. |
 | Car | After the car sends data, the log shows `Message: vehicle...` lines. |
 
@@ -53,7 +53,8 @@ Human guides: [README.md](README.md) (English) and [README.tr.md](README.tr.md) 
 - **One stream connection for each account.** A second copy of the program with the same account breaks both. Do not run the program on the person's own computer when the server runs it.
 - **A notification can be lost between ntfy.sh and the phone.** ntfy gives no delivery confirmation. The log line `Notification accepted by ntfy` has the message id (older log lines say `Notification sent`). Run `sudo mini-watch ntfy-check <id>` to see if ntfy still has the message. The ntfy cache keeps a message for 12 hours by default. "found" means that ntfy.sh has the message. Then the loss is outside the program. Do not change the code for it. "missing" and "unknown" give no proof. See `docs/en/03-ntfy.md`, "Lost notifications". Do not print the topic name. `ntfy-check` does not print it.
 - **Do not run `pushover-test` unasked.** It sends a real notification through Pushover, also while `notify_service` is `ntfy`. Ask the person first. The Pushover token and user key are secrets. The program does not print them, and you must not print them either. Pushover is not yet tested on a phone. See `docs/en/06-pushover.md`.
-- **Keep `ntfy_topic` in `config.json`, also with Pushover.** A rollback (`sudo bash deploy/install.sh --rollback`) to a release before Pushover ignores `notify_service`. That release sends through ntfy and does not start without `ntfy_topic`. With Pushover, `doctor` shows a `WARN` line when the topic is empty or not valid.
+- **Keep `ntfy_topic` in `config.json`, also with `pushover` and `off`.** A rollback (`sudo bash deploy/install.sh --rollback`) to a release before Pushover ignores `notify_service`. That release sends through ntfy and does not start without `ntfy_topic`. With `pushover` or `off`, `doctor` shows a `WARN` line when the topic is empty or not valid. A release with `pushover` but without `both` and `off` does not start when `notify_service` is `both` or `off`. Before a rollback, set `notify_service` to `ntfy` or `pushover`.
+- **`notify_service` has four values:** `off` (no notification, the text goes to the log), `ntfy` (default), `pushover` and `both` (ntfy and Pushover at the same time). With `both`, a notification counts as sent when one service accepts it. The program does not try again for the other service. `tools/replay.mjs` sends nothing with each value.
 - **Subscribe before you log in.** Turn on **CarData API**, wait 60 seconds, turn on **CarData Stream**, wait 60 seconds. Then run the `login` command. A login before the subscription gives a token without the stream scope.
 - **Do not press "Authenticate device" in the portal before the program shows a code.**
 - **The portal list page loses the old selection** if you open it from the address bar. Use the **Change data selection** button. The first press can fail. Press it again.
@@ -97,7 +98,8 @@ Bu dosya, projeyi kurmaya yardım eden bir yapay zeka aracı içindir. Kurulum r
 - Parola, kart numarası ve tek kullanımlık kodu asla sen yazma. Kullanıcı yazar.
 - Token, Pushover token'ı, Pushover kullanıcı anahtarı, Client ID, konu adı, VIN ve IP adresini sohbete veya commit'e yazma.
 - `pushover-test` gerçek bir bildirim yollar. Kullanıcı istemeden çalıştırma. Pushover henüz bir telefonda denenmedi.
-- Pushover seçiliyken de `ntfy_topic` ayarını silme. Pushover'dan önceki bir sürüme dönüş bu ayar olmadan başlamaz.
+- `notify_service` dört değer alır: `off`, `ntfy` (varsayılan), `pushover` ve `both` (ikisi birden). `both` seçiliyken bir servis kabul edince bildirim gönderilmiş sayılır. Eski sürüme dönmeden önce `notify_service` değerini `ntfy` veya `pushover` yap: `both` ve `off` değerlerini bilmeyen sürüm başlamaz.
+- `pushover` ve `off` seçiliyken de `ntfy_topic` ayarını silme. Pushover'dan önceki bir sürüme dönüş bu ayar olmadan başlamaz.
 - Ücret doğuran veya şart kabul eden bir işten önce kullanıcıya sor.
 - Güvenlik duvarındaki genel kuralları, IAP tünelini denemeden silme.
 - Sunucuyu sert sıfırlama. `sudo systemctl reboot` kullan.

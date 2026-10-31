@@ -40,6 +40,9 @@ Log satırları her zaman İngilizce yazılır. Yalnızca bildirim metni `langua
 | `Notification accepted by ntfy: ...` | ntfy bildirimi kabul etti. Satırda başlık, metin, mesaj kimliği, HTTP durum kodu, mesajın zamanı ve silineceği zaman (UTC) var. Zaman ve silineceği zaman yalnız ntfy geçerli değerler yollarsa görünür. "Kabul etti", ntfy'nin mesajı kaydettiği anlamına gelir. Telefonun bildirimi aldığı anlamına gelmez. ntfy teslim onayı vermez. Eski log satırları `Notification sent: ...` der. Bu satırlarda HTTP durum kodu, zaman ve silineceği zaman yoktur. Yollanan tüm bildirimleri listelemek için: `sudo journalctl -u mini-watch --no-pager \| grep -E "Notification (sent\|accepted)"`. |
 | `Notification not confirmed: ...` | ntfy HTTP 2xx ile yanıt verdi ama yanıtta mesaj kimliği yok. Program bildirimi gönderilmiş saymaz. `Notification failed` satırında olduğu gibi daha sonra yeniden dener. Satır tekrar ediyorsa `config.json` içindeki `ntfy_server` değerini kontrol et. |
 | `Notification service: Pushover.` | Program `notify_service` değeri `pushover` iken başladı. ntfy ile bu satır görünmez. Bkz. [Pushover](06-pushover.md). |
+| `Notification service: ntfy and Pushover.` | Program `notify_service` değeri `both` iken başladı. Bkz. [Pushover](06-pushover.md). |
+| `Notification service: off. The program sends no notification.` | Program `notify_service` değeri `off` iken başladı. Bkz. [Pushover](06-pushover.md). |
+| `ntfy did not accept the notification. The other service did, so the program does not try again.` (veya `Pushover did not ...`) | Yalnız `both` seçiliyken görünür. Bir servis bildirimi kabul etti, diğeri etmedi. Daha önceki bir satır sebebi söyler. Bkz. [Pushover](06-pushover.md). |
 | `Notification accepted by Pushover: ...` | Pushover bir bildirimi kabul etti. Satırda başlık, metin, istek kimliği (request id) ve HTTP durum kodu var. Bu bir teslim onayı değil. |
 | `Notification not confirmed by Pushover: ...` | Pushover HTTP 2xx ile yanıt verdi ama yanıtta istek kimliği yok. Program bildirimi gönderilmiş saymaz. `Notification failed` satırında olduğu gibi daha sonra yeniden dener. |
 | `The token expires soon. Refreshing it.` | Normal yenileme. Her saat olur. |
@@ -76,9 +79,9 @@ sudo systemctl restart mini-watch
 | `silence_alert_hours` | 0 (kapalı) | Araçtan bu kadar saat veri gelmezse tek bir bildirim. Araç uyurken hiçbir şey yollamaz. Bu yüzden uzun süre park halinde de bu bildirim gelir. |
 | `vehicle_names` | `{}` | Hesapta birden fazla araç varsa araçların adları. Örnek: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | Kendi ntfy sunucunun adresi |
-| `notify_service` | `ntfy` | Tüm bildirimleri yollayan servis: `ntfy` veya `pushover`. Bkz. [Pushover](06-pushover.md). |
-| `pushover_token` | boş | Pushover uygulamanın API token'ı (30 harf ve rakam). Gizli. Yalnız `pushover` seçiliyken ve `pushover-test` komutunda kullanılır. |
-| `pushover_user` | boş | Pushover kullanıcı anahtarın ya da bir teslim grubu anahtarı (30 harf ve rakam). Gizli. Yalnız `pushover` seçiliyken ve `pushover-test` komutunda kullanılır. |
+| `notify_service` | `ntfy` | Tüm bildirimleri yollayan servis: `ntfy`, `pushover`, `both` veya `off`. Bkz. [Pushover](06-pushover.md). |
+| `pushover_token` | boş | Pushover uygulamanın API token'ı (30 harf ve rakam). Gizli. Yalnız `pushover` ve `both` seçiliyken ve `pushover-test` komutunda kullanılır. |
+| `pushover_user` | boş | Pushover kullanıcı anahtarın ya da bir teslim grubu anahtarı (30 harf ve rakam). Gizli. Yalnız `pushover` ve `both` seçiliyken ve `pushover-test` komutunda kullanılır. |
 
 ## Programı güncelle
 
