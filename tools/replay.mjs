@@ -7,7 +7,7 @@
 // On the server the file is /var/lib/mini-watch/messages.jsonl. Copy it to another computer first.
 // If messages.jsonl.1 (the older history file) is next to it, the tool reads it too.
 import { existsSync, readFileSync } from 'node:fs';
-import { DEFAULT_CONFIG, Fleet, formatTime, vinOf } from '../mini_watch.mjs';
+import { CHECK_EVERY_S, DEFAULT_CONFIG, Fleet, formatTime, vinOf } from '../mini_watch.mjs';
 
 const args = process.argv.slice(2);
 const hoursFlag = args.indexOf('--hours');
@@ -53,7 +53,7 @@ console.log = (...parts) => {
 };
 
 let next = 0;
-for (clock = start; clock <= end; clock += 15) {
+for (clock = start; clock <= end; clock += CHECK_EVERY_S) {
   while (next < messages.length && messages[next].t <= clock) {
     fleet.onMessage(messages[next].vin, messages[next].data, messages[next].t);
     next += 1;

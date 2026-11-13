@@ -115,6 +115,12 @@ const CONFIRM_WINDOW_S = 600;
 // "Everything is closed" waits until every part stays closed for this time. While you unload the car, the doors
 // open one after the other. A check between two doors must not send the message too early.
 const CLOSED_SETTLE_S = 15;
+// The main loop checks every 10 seconds. While a message waits for its settle time, it checks every 5 seconds.
+// tools/replay.mjs uses the same step.
+export const CHECK_EVERY_S = 10;
+// Setting comfort_close_wait: the wait after a lock from outside for a part that was open at the lock.
+// A comfort close (hold the lock button) closes the windows and the sunroof within about 35 seconds after the lock.
+export const COMFORT_CLOSE_WAIT_S = 30;
 // The length of the last drive: from the moment the car locks itself (LOCKED) to the unlock at the end.
 // The LOCKED state must start at most 20 minutes before the first odometer value of the drive.
 // A stop shorter than 10 minutes belongs to the same drive.
@@ -297,6 +303,7 @@ export const DEFAULT_CONFIG = {
   timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
   alert_after_min: 10,
   alert_after_lock_min: 0, // Wait after the car is locked from outside, for a part that was open at that time. 0 = at once.
+  comfort_close_wait: false, // true = wait at least 30 seconds after the lock from outside, so a comfort close (hold the lock button) can finish.
   remind_after_min: [30, 90], // Reminders: minutes after the first notification. [] = no reminder.
   park_after_idle_min: 30,
   lock_confirm: false, // true = a notification "locked, everything is closed" when you lock the car with all parts closed.
@@ -359,7 +366,7 @@ export function checkConfig(cfg) {
       throw new Error(`"ntfy_tags.${kind}" must be an ntfy tag name like "rotating_light". A comma gives more than one. Now it is ${JSON.stringify(value)}.`);
     }
   }
-  for (const key of ['lock_confirm', 'notify_trip', 'notify_battery']) {
+  for (const key of ['lock_confirm', 'comfort_close_wait', 'notify_trip', 'notify_battery']) {
     if (typeof cfg[key] !== 'boolean') throw new Error(`"${key}" must be true or false. Now it is ${JSON.stringify(cfg[key])}.`);
   }
   const below = cfg.notify_battery_below_pct;
@@ -1376,7 +1383,9 @@ export class Watcher {
   }
 
   // Optional (lock_confirm). The car is locked from outside and every part is closed: say it at once.
-  // It shows that the notification system works. Rules:
+  // It shows that the notification system works. The lock wait (alert_after_lock_min, comfort_close_wait) does
+  // not apply here: this message only comes when no part is open. After a comfort close, it comes at the
+  // first check after the last part closed. Rules:
   // - Only after a door opened or the car drove since the last confirmation. A key near the car (a valet)
   //   can lock and unlock the car many times without a door. Those cycles give nothing.
   // - A lock less than 2 minutes after the last confirmation gives nothing (a walk around the car).
@@ -1384,7 +1393,6 @@ export class Watcher {
   async confirmLock(t) {
     if (!this.isSecured()) return;
     const now = this.clock();
-    if (now - this.lockChangedAt < this.cfg.alert_after_lock_min * 60) return;
     if (now - this.lockChangedAt > CONFIRM_WINDOW_S) return;
     if (this.confirmedAt >= Math.max(this.lastDoorAt, this.kmChangedAt)) return;
     if (this.lockChangedAt - this.confirmedAt < RELOCK_WAIT_S) {
@@ -1404,9 +1412,10 @@ export class Watcher {
     const t = textFor(this.cfg);
     const wait = this.cfg.alert_after_min * 60;
     // A part that was open when the car was locked from outside: notify after alert_after_lock_min
-    // (0 = at the next check, at most 15 seconds). With 1 minute, the windows and the sunroof can close
-    // first (comfort close while you hold the lock button).
-    const lockWait = this.cfg.alert_after_lock_min * 60;
+    // (0 = at the next check, at most CHECK_EVERY_S seconds). With comfort_close_wait, the wait is at least
+    // COMFORT_CLOSE_WAIT_S, so the windows and the sunroof can close first (comfort close while you hold
+    // the lock button). The longer of the two waits applies.
+    const lockWait = Math.max(this.cfg.alert_after_lock_min * 60, this.cfg.comfort_close_wait ? COMFORT_CLOSE_WAIT_S : 0);
     const secured = this.isSecured();
     // After a return to the car without a drive, a new lock must stay for RELOCK_WAIT_S (2 minutes).
     const securedWait = this.returnedAt ? Math.max(lockWait, RELOCK_WAIT_S) : lockWait;
@@ -1514,12 +1523,12 @@ export class Fleet {
   }
 
   // While a "closed" message waits for its settle time, check more often. The message then comes
-  // about 15 to 20 seconds after the last part closed (a check every 15 seconds would give 15 to 30).
+  // about 15 to 20 seconds after the last part closed (a check every 10 seconds would give 15 to 25).
   nextCheckDelayMs() {
     const pending = [...this.watchers.values()].some(
       (watcher) => (watcher.alerted && watcher.sawClose && watcher.openSince.size === 0) || watcher.chargeWaitSince > 0,
     );
-    return pending ? 5_000 : 15_000;
+    return pending ? 5_000 : CHECK_EVERY_S * 1000;
   }
 
   watcher(vin) {

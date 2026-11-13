@@ -58,7 +58,7 @@ Bir hata mı buldun ya da yeni bir olay mı istiyorsun? Bu depoda bir issue aç.
 
 | Durum | Bildirim |
 |---|---|
-| Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra. Aracı kilitlersen hemen. |
+| Aracı park edip indin, bir parça açık kaldı | 10 dakika sonra. Aracı kilitlersen hemen (`comfort_close_wait` açıksa yaklaşık 30 saniye sonra). |
 | Parça hala açık | İlk bildirimden 30 ve 90 dakika sonra hatırlatma. Sonra başka yok. Araca dönünce durur. |
 | Her şeyi kapattın | "Her şey kapandı" diyen tek bir mesaj. Araca döndüysen ve `lock_confirm` açıksa gelmez: bir sonraki kilit bunu söyler. |
 | Aracı kilitledin ve her parça kapalı | İsteğe bağlı (`lock_confirm`): "kilitlendi, her şey kapalı". Sistemin çalıştığını gösterir. |

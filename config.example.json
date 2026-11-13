@@ -6,6 +6,7 @@
   "timezone": "",
   "alert_after_min": 10,
   "alert_after_lock_min": 0,
+  "comfort_close_wait": false,
   "lock_confirm": false,
   "notify_trip": false,
   "notify_battery": false,

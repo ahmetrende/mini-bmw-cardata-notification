@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { after, test } from 'node:test';
 import {
+  CHECK_EVERY_S,
+  COMFORT_CLOSE_WAIT_S,
   DEFAULT_CONFIG,
   Fleet,
   History,
@@ -792,6 +794,102 @@ test('lock: with alert_after_lock_min 2, a comfort close after the lock gives no
   assert.deepEqual(await simulate(events, 0, 60, { alert_after_lock_min: 2 }), []);
   const sent = await simulate(lockedTrip(), 0, 40, { alert_after_lock_min: 2 });
   assert.equal(sent[0][0], 26);
+});
+
+// ---- comfort_close_wait: wait 30 seconds after the lock, so a comfort close (hold the lock button) can finish ----
+// The sunroof of lockedTrip is open at the lock (minute 24). Here it closes 12 seconds later, at minute 24.2.
+
+const COMFORT_CLOSE = [[24.2, { [TILT]: 'CLOSED' }]];
+
+test('comfort_close_wait: off by default, and it must be true or false', () => {
+  assert.equal(DEFAULT_CONFIG.comfort_close_wait, false);
+  checkConfig({ ...DEFAULT_CONFIG, comfort_close_wait: true });
+  assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, comfort_close_wait: 'yes' }), /comfort_close_wait/);
+  assert.throws(() => checkConfig({ ...DEFAULT_CONFIG, comfort_close_wait: 30 }), /comfort_close_wait/);
+});
+
+test('comfort_close_wait off: a comfort close after the lock gives the open part notification and then "everything is closed"', async () => {
+  const sent = await simulate(lockedTrip(COMFORT_CLOSE), 0, 60);
+  assert.deepEqual(sent.map(([m]) => m), [24, 24.5]);
+  assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:24$/);
+  assert.match(sent[1][1], /Everything is closed\./);
+});
+
+test('comfort_close_wait on: a comfort close 12 seconds after the lock gives no notification', async () => {
+  assert.deepEqual(await simulate(lockedTrip(COMFORT_CLOSE), 0, 60, { comfort_close_wait: true }), []);
+});
+
+test('comfort_close_wait on: a part that stays open gives the notification 30 seconds after the lock', async () => {
+  const sent = await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true });
+  assert.deepEqual(sent.map(([m]) => m), [24.5]);
+  assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:24$/);
+});
+
+test('comfort_close_wait on: the longer of the two waits applies (alert_after_lock_min stays in force)', async () => {
+  assert.equal((await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true, alert_after_lock_min: 2 }))[0][0], 26);
+  assert.equal((await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true, alert_after_lock_min: 0.25 }))[0][0], 24.5, '15 seconds do not shorten the 30');
+});
+
+test('comfort_close_wait on: a part that opens after the lock still follows the normal wait', async () => {
+  const sent = await simulate(lockedTrip([[23.5, { [TILT]: 'CLOSED' }], [30, { [TRUNK]: true }]]), 0, 60, { comfort_close_wait: true });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 40, 'trunk opened at 30 + 10 minutes');
+});
+
+test('lock confirmation: after a comfort close, the message comes at the first check after the last part closed', async () => {
+  const sent = await simulate(lockedTrip(COMFORT_CLOSE), 0, 60, { ...CONFIRM, comfort_close_wait: true });
+  assert.deepEqual(sent.map(([m]) => m), [24.25]);
+  assert.match(sent[0][1], /MINI locked: Everything is closed\.$/);
+});
+
+test('lock confirmation: the lock waits do not delay the message when no part is open', async () => {
+  const sent = await simulate(parkedClosed(), 0, 60, { ...CONFIRM, comfort_close_wait: true, alert_after_lock_min: 2 });
+  assert.deepEqual(sent.map(([m]) => m), [24]);
+});
+
+// A watcher with a clock in whole seconds. The sunroof is open, the driver gets out, the car is locked at second 120.
+function lockedWithOpenSunroof(cfg) {
+  let clock = 0;
+  const watcher = new Watcher({ ...DEFAULT_CONFIG, timezone: 'UTC', ...cfg }, { clock: () => clock, random: () => 0.5 });
+  const feed = (seconds, values) => {
+    clock = seconds;
+    watcher.onData(msg(values), seconds);
+  };
+  feed(0, { [KM]: 100, [LOCK]: 'UNLOCKED', [TILT]: 'OPEN' });
+  feed(60, { [DRIVER_DOOR]: true });
+  feed(72, { [DRIVER_DOOR]: false });
+  feed(120, { [LOCK]: 'SECURED' });
+  return { feed, check: async (seconds) => ((clock = seconds), logsDuring(() => watcher.check())) };
+}
+
+test('comfort_close_wait on: nothing before COMFORT_CLOSE_WAIT_S after the lock, the notification at that time', async () => {
+  assert.equal(COMFORT_CLOSE_WAIT_S, 30);
+  const { check } = lockedWithOpenSunroof({ comfort_close_wait: true });
+  assert.deepEqual(await check(120 + COMFORT_CLOSE_WAIT_S - 1), [], '1 second too early');
+  assert.equal((await check(120 + COMFORT_CLOSE_WAIT_S)).length, 1, 'at 30 seconds');
+});
+
+test('comfort_close_wait off: the notification comes at the first check after the lock', async () => {
+  const { check } = lockedWithOpenSunroof({});
+  assert.equal((await check(120)).length, 1);
+});
+
+test('comfort_close_wait on: a close after the 30 seconds (the 35 second case) still gives both messages', async () => {
+  // This is the known limit of the 30 second wait. The docs say it.
+  const { feed, check } = lockedWithOpenSunroof({ comfort_close_wait: true });
+  const open = await check(120 + 30);
+  assert.match(open[0], /MINI locked, but a part is open/);
+  feed(120 + 35, { [TILT]: 'CLOSED' });
+  const closed = await check(120 + 35 + 20);
+  assert.match(closed[0], /Everything is closed\./);
+});
+
+test('comfort_close_wait on: a close before the 30 seconds (the 14 second case) gives nothing', async () => {
+  const { feed, check } = lockedWithOpenSunroof({ comfort_close_wait: true });
+  assert.deepEqual(await check(120 + 10), []);
+  feed(120 + 14, { [TILT]: 'CLOSED' });
+  assert.deepEqual(await check(120 + 24), []);
+  assert.deepEqual(await check(120 + 60), []);
 });
 
 test('the text shows the start of the park for a part that was open since an earlier day', async () => {
@@ -1991,13 +2089,14 @@ test('closed: the message waits for the 15 seconds, also with a direct check', a
   assert.equal((await logsDuring(() => watcher.check())).length, 1, '15 s');
 });
 
-test('closed: the main loop checks every 5 seconds while a closed message waits, else every 15', async () => {
+test('closed: the main loop checks every 5 seconds while a closed message waits, else every 10', async () => {
+  assert.equal(CHECK_EVERY_S, 10);
   const fleet = new Fleet(baseConfig, { clock: () => 0 });
-  assert.equal(fleet.nextCheckDelayMs(), 15_000);
+  assert.equal(fleet.nextCheckDelayMs(), 10_000);
   const watcher = fleet.watcher(VIN_A);
   watcher.alerted = true;
   watcher.sawClose = true;
   assert.equal(fleet.nextCheckDelayMs(), 5_000);
   watcher.openSince.set(WIN, 0);
-  assert.equal(fleet.nextCheckDelayMs(), 15_000, 'a part is open: nothing waits');
+  assert.equal(fleet.nextCheckDelayMs(), 10_000, 'a part is open: nothing waits');
 });
