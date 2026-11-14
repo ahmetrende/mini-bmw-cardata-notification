@@ -67,7 +67,7 @@ sudo systemctl restart mini-watch
 | `timezone` | server time zone | Time zone of the times in the notification. Example: `Europe/Istanbul` |
 | `alert_after_min` | 10 | Wait time after the last driver door opening, before a notification |
 | `alert_after_lock_min` | 0 | Wait time after you lock the car from outside, for a part that was open at the lock. 0 = at once. See also `comfort_close_wait`. |
-| `comfort_close_wait` | `false` | `true` = after you lock the car from outside, the program waits at least 30 seconds before it tells you about an open part. A comfort close (you hold the lock button) can finish in this time. The longer of this wait and `alert_after_lock_min` applies. The message "locked, everything is closed" does not wait. |
+| `comfort_close_wait` | `false` | `true` = after you lock the car from outside, the program waits at least 45 seconds before it tells you about an open part. A comfort close (you hold the lock button) can finish in this time. The longer of this wait and `alert_after_lock_min` applies. The message "locked, everything is closed" does not wait. |
 | `remind_after_min` | `[30, 90]` | Reminders, in minutes after the first notification. `[]` = no reminder. Up to 10 values, each larger than the one before. |
 | `park_after_idle_min` | 30 | The car counts as parked when the odometer is still for this time |
 | `ntfy_tags` | see below | The emoji at the start of the title, one ntfy tag name for each kind: `open`, `still_open`, `closed`, `locked`, `silence`, `test`. Defaults: `warning` (⚠️), `warning`, `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `car` (🚗). Example: `{"open": "rotating_light"}`. A missing kind keeps its default. The names are in [the ntfy emoji list](https://docs.ntfy.sh/emojis/). |

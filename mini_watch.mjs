@@ -119,8 +119,9 @@ const CLOSED_SETTLE_S = 15;
 // tools/replay.mjs uses the same step.
 export const CHECK_EVERY_S = 10;
 // Setting comfort_close_wait: the wait after a lock from outside for a part that was open at the lock.
-// A comfort close (hold the lock button) closes the windows and the sunroof within about 35 seconds after the lock.
-export const COMFORT_CLOSE_WAIT_S = 30;
+// A comfort close (hold the lock button) closes the windows and the sunroof within about 35 seconds after the lock
+// (14 and 35 seconds in the two cases that were measured). 45 seconds covers both, with room for one check step.
+export const COMFORT_CLOSE_WAIT_S = 45;
 // The length of the last drive: from the moment the car locks itself (LOCKED) to the unlock at the end.
 // The LOCKED state must start at most 20 minutes before the first odometer value of the drive.
 // A stop shorter than 10 minutes belongs to the same drive.
@@ -303,7 +304,7 @@ export const DEFAULT_CONFIG = {
   timezone: '', // Empty means the time zone of the server. Example: "Europe/Istanbul"
   alert_after_min: 10,
   alert_after_lock_min: 0, // Wait after the car is locked from outside, for a part that was open at that time. 0 = at once.
-  comfort_close_wait: false, // true = wait at least 30 seconds after the lock from outside, so a comfort close (hold the lock button) can finish.
+  comfort_close_wait: false, // true = wait at least 45 seconds after the lock from outside, so a comfort close (hold the lock button) can finish.
   remind_after_min: [30, 90], // Reminders: minutes after the first notification. [] = no reminder.
   park_after_idle_min: 30,
   lock_confirm: false, // true = a notification "locked, everything is closed" when you lock the car with all parts closed.

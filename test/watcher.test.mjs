@@ -796,7 +796,7 @@ test('lock: with alert_after_lock_min 2, a comfort close after the lock gives no
   assert.equal(sent[0][0], 26);
 });
 
-// ---- comfort_close_wait: wait 30 seconds after the lock, so a comfort close (hold the lock button) can finish ----
+// ---- comfort_close_wait: wait 45 seconds after the lock, so a comfort close (hold the lock button) can finish ----
 // The sunroof of lockedTrip is open at the lock (minute 24). Here it closes 12 seconds later, at minute 24.2.
 
 const COMFORT_CLOSE = [[24.2, { [TILT]: 'CLOSED' }]];
@@ -819,15 +819,15 @@ test('comfort_close_wait on: a comfort close 12 seconds after the lock gives no 
   assert.deepEqual(await simulate(lockedTrip(COMFORT_CLOSE), 0, 60, { comfort_close_wait: true }), []);
 });
 
-test('comfort_close_wait on: a part that stays open gives the notification 30 seconds after the lock', async () => {
+test('comfort_close_wait on: a part that stays open gives the notification 45 seconds after the lock', async () => {
   const sent = await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true });
-  assert.deepEqual(sent.map(([m]) => m), [24.5]);
+  assert.deepEqual(sent.map(([m]) => m), [24.75]);
   assert.match(sent[0][1], /MINI locked, but a part is open: Sunroof \(tilted\) since 00:24$/);
 });
 
 test('comfort_close_wait on: the longer of the two waits applies (alert_after_lock_min stays in force)', async () => {
   assert.equal((await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true, alert_after_lock_min: 2 }))[0][0], 26);
-  assert.equal((await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true, alert_after_lock_min: 0.25 }))[0][0], 24.5, '15 seconds do not shorten the 30');
+  assert.equal((await simulate(lockedTrip(), 0, 40, { comfort_close_wait: true, alert_after_lock_min: 0.25 }))[0][0], 24.75, '15 seconds do not shorten the 45');
 });
 
 test('comfort_close_wait on: a part that opens after the lock still follows the normal wait', async () => {
@@ -863,10 +863,10 @@ function lockedWithOpenSunroof(cfg) {
 }
 
 test('comfort_close_wait on: nothing before COMFORT_CLOSE_WAIT_S after the lock, the notification at that time', async () => {
-  assert.equal(COMFORT_CLOSE_WAIT_S, 30);
+  assert.equal(COMFORT_CLOSE_WAIT_S, 45);
   const { check } = lockedWithOpenSunroof({ comfort_close_wait: true });
   assert.deepEqual(await check(120 + COMFORT_CLOSE_WAIT_S - 1), [], '1 second too early');
-  assert.equal((await check(120 + COMFORT_CLOSE_WAIT_S)).length, 1, 'at 30 seconds');
+  assert.equal((await check(120 + COMFORT_CLOSE_WAIT_S)).length, 1, 'at 45 seconds');
 });
 
 test('comfort_close_wait off: the notification comes at the first check after the lock', async () => {
@@ -874,17 +874,24 @@ test('comfort_close_wait off: the notification comes at the first check after th
   assert.equal((await check(120)).length, 1);
 });
 
-test('comfort_close_wait on: a close after the 30 seconds (the 35 second case) still gives both messages', async () => {
-  // This is the known limit of the 30 second wait. The docs say it.
+test('comfort_close_wait on: a close after the 45 seconds still gives both messages', async () => {
+  // This is the known limit of the 45 second wait. The docs say it. The longest measured close was 35 seconds.
   const { feed, check } = lockedWithOpenSunroof({ comfort_close_wait: true });
-  const open = await check(120 + 30);
+  const open = await check(120 + 45);
   assert.match(open[0], /MINI locked, but a part is open/);
-  feed(120 + 35, { [TILT]: 'CLOSED' });
-  const closed = await check(120 + 35 + 20);
+  feed(120 + 50, { [TILT]: 'CLOSED' });
+  const closed = await check(120 + 50 + 20);
   assert.match(closed[0], /Everything is closed\./);
 });
 
-test('comfort_close_wait on: a close before the 30 seconds (the 14 second case) gives nothing', async () => {
+test('comfort_close_wait on: a close at 35 seconds (the longest measured case) gives nothing', async () => {
+  const { feed, check } = lockedWithOpenSunroof({ comfort_close_wait: true });
+  for (const seconds of [10, 20, 30]) assert.deepEqual(await check(120 + seconds), [], `${seconds} s`);
+  feed(120 + 35, { [TILT]: 'CLOSED' });
+  for (const seconds of [40, 50, 60, 120]) assert.deepEqual(await check(120 + seconds), [], `${seconds} s`);
+});
+
+test('comfort_close_wait on: a close before the wait (the 14 second case) gives nothing', async () => {
   const { feed, check } = lockedWithOpenSunroof({ comfort_close_wait: true });
   assert.deepEqual(await check(120 + 10), []);
   feed(120 + 14, { [TILT]: 'CLOSED' });

@@ -69,7 +69,7 @@ sudo systemctl restart mini-watch
 | `timezone` | sunucunun saat dilimi | Bildirimdeki saatlerin saat dilimi. Örnek: `Europe/Istanbul` |
 | `alert_after_min` | 10 | Sürücü kapısı son açıldıktan sonra bildirimden önceki bekleme |
 | `alert_after_lock_min` | 0 | Aracı dışarıdan kilitledikten sonra, kilitlerken açık olan parça için bekleme. 0 = hemen. Bkz. `comfort_close_wait`. |
-| `comfort_close_wait` | `false` | `true` = aracı dışarıdan kilitledikten sonra program, açık parçayı bildirmeden önce en az 30 saniye bekler. Konfor kapanması (kilit düğmesine basılı tutarsın) bu sürede bitebilir. Bu bekleme ile `alert_after_lock_min` değerinden uzun olan geçerli olur. "Kilitlendi, her şey kapalı" mesajı beklemez. |
+| `comfort_close_wait` | `false` | `true` = aracı dışarıdan kilitledikten sonra program, açık parçayı bildirmeden önce en az 45 saniye bekler. Konfor kapanması (kilit düğmesine basılı tutarsın) bu sürede bitebilir. Bu bekleme ile `alert_after_lock_min` değerinden uzun olan geçerli olur. "Kilitlendi, her şey kapalı" mesajı beklemez. |
 | `remind_after_min` | `[30, 90]` | Hatırlatmalar, ilk bildirimden kaç dakika sonra. `[]` = hatırlatma yok. En çok 10 değer, her biri öncekinden büyük. |
 | `park_after_idle_min` | 30 | Kilometre bu kadar durursa araç park sayılır |
 | `ntfy_tags` | aşağıya bak | Başlığın başındaki emoji. Her bildirim türü için bir ntfy etiket adı: `open`, `still_open`, `closed`, `locked`, `silence`, `test`. Varsayılanlar: `warning` (⚠️), `warning`, `white_check_mark` (✅), `lock` (🔒), `grey_question` (❔), `car` (🚗). Örnek: `{"open": "rotating_light"}`. Yazmadığın tür varsayılanını korur. Adlar [ntfy emoji listesinde](https://docs.ntfy.sh/emojis/). |
