@@ -76,6 +76,9 @@ const usesNtfy = (cfg) => cfg.notify_service !== 'pushover' && cfg.notify_servic
 // Pushover. The addresses are fixed: they are not settings. A token and a user key have 30 letters and digits.
 const PUSHOVER_MESSAGES_URL = 'https://api.pushover.net/1/messages.json';
 const PUSHOVER_VALIDATE_URL = 'https://api.pushover.net/1/users/validate.json';
+const PUSHOVER_SOUNDS_URL = 'https://api.pushover.net/1/sounds.json';
+// The name of a sound for Pushover: a built-in name like "echo" or the name of a custom sound of the account.
+const PUSHOVER_SOUND_NAME = /^[A-Za-z0-9_-]{1,40}$/;
 const PUSHOVER_KEY = /^[A-Za-z0-9]{30}$/;
 // A request id that the log can show. Another value shows as "(not printable)": an answer can contain an address.
 const PUSHOVER_REQUEST_ID = /^[A-Za-z0-9-]{1,64}$/;
@@ -325,6 +328,10 @@ export const DEFAULT_CONFIG = {
   // The program checks and uses them only when notify_service is "pushover" or "both", and in the command "pushover-test".
   pushover_token: '',
   pushover_user: '',
+  // Pushover: the sound for each kind of notification (the kinds of ntfy_tags). The name of a Pushover sound, for
+  // example "echo", or the name of a custom sound of the account. A missing kind uses the default sound of the Pushover app.
+  // Example: {"open": "echo", "still_open": "echo"}. Only Pushover uses it.
+  pushover_sounds: {},
 };
 
 // Minutes settings: a number from 1 minute to 7 days. alert_after_min can also be 0 (no wait).
@@ -365,6 +372,16 @@ export function checkConfig(cfg) {
     if (!tagKinds.includes(kind)) throw new Error(`"ntfy_tags" has an unknown kind "${kind}". The kinds: ${tagKinds.join(', ')}.`);
     if (typeof value !== 'string' || !/^[a-z0-9_+-]+(,[a-z0-9_+-]+)*$/i.test(value)) {
       throw new Error(`"ntfy_tags.${kind}" must be an ntfy tag name like "rotating_light". A comma gives more than one. Now it is ${JSON.stringify(value)}.`);
+    }
+  }
+  const sounds = cfg.pushover_sounds;
+  if (!sounds || typeof sounds !== 'object' || Array.isArray(sounds)) {
+    throw new Error(`"pushover_sounds" must look like {"open": "echo"}. The kinds: ${tagKinds.join(', ')}.`);
+  }
+  for (const [kind, value] of Object.entries(sounds)) {
+    if (!tagKinds.includes(kind)) throw new Error(`"pushover_sounds" has an unknown kind "${kind}". The kinds: ${tagKinds.join(', ')}.`);
+    if (typeof value !== 'string' || !PUSHOVER_SOUND_NAME.test(value)) {
+      throw new Error(`"pushover_sounds.${kind}" must be the name of a Pushover sound, for example "echo". Now it is ${JSON.stringify(value)}.`);
     }
   }
   for (const key of ['lock_confirm', 'comfort_close_wait', 'notify_trip', 'notify_battery']) {
@@ -561,6 +578,8 @@ const NTFY_PRIORITY = { default: 3, high: 4 };
 
 // The tag (emoji) of a kind of notification: open, still_open, closed, locked, silence or test.
 export const tagFor = (cfg, kind) => cfg.ntfy_tags?.[kind] ?? DEFAULT_CONFIG.ntfy_tags[kind];
+// The Pushover sound of a kind of notification. An empty text means: no sound field, the Pushover app plays its default sound.
+export const soundFor = (cfg, kind) => (typeof cfg.pushover_sounds?.[kind] === 'string' ? cfg.pushover_sounds[kind] : '');
 
 // An ntfy time (seconds since 1970) as ISO text in UTC, or '' when the value is not a usable number.
 function ntfyTime(seconds) {
@@ -803,24 +822,66 @@ function pushoverPost(url, fields) {
 const isRedirect = (status) => status >= 300 && status < 400;
 const REDIRECT_TEXT = 'a redirect. The program does not follow it.';
 
+// Does an HTTP 4xx answer of Pushover refuse only the sound? A JSON object that names the sound (the field "sound" or
+// an error text with the word) and names no other field: no token, no user key, no other error. Pushover names a wrong
+// field with the value "invalid". Any other answer (an HTML page, a text, another field) gives false, so no second
+// request goes to Pushover for a problem that a second request cannot solve.
+function refusesSound(text) {
+  let answer = null;
+  try {
+    answer = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) return false;
+  const fields = Object.keys(answer).filter((key) => !['status', 'request', 'errors'].includes(key));
+  const errors = Array.isArray(answer.errors) ? answer.errors.map(String) : [];
+  const named = fields.includes('sound') || errors.some((error) => /sound/i.test(error));
+  return named && fields.every((key) => key === 'sound') && errors.every((error) => /sound/i.test(error));
+}
+
 // Sends one notification through Pushover. The arguments are the same as for ntfy(). Priority "high" becomes
 // Pushover priority 1, all others 0. Returns true only when Pushover accepted the message: HTTP 2xx and an answer
 // with status 1 and a request id. These priorities give no delivery confirmation either. A 2xx answer without a
 // request id returns false, so the retry runs, as with ntfy. An empty token or user key prints the text and
 // returns true (tools/replay.mjs). The log never shows the token, the user key or the address.
-export async function pushover(cfg, title, text, priority = 'high', tags = 'warning') {
+export async function pushover(cfg, title, text, priority = 'high', tags = 'warning', sound = '') {
   if (!cfg.pushover_token || !cfg.pushover_user) {
     log(`[ntfy off] ${title}: ${text}`);
     return true;
   }
   try {
-    const resp = await pushoverPost(PUSHOVER_MESSAGES_URL, {
+    const message = {
       token: cfg.pushover_token,
       user: cfg.pushover_user,
       title: pushoverTitle(title, tags),
       message: cutText(text, PUSHOVER_MESSAGE_MAX),
       priority: priority === 'high' ? '1' : '0',
-    });
+    };
+    // The sound is the sixth argument ('' = no sound field: the Pushover app plays its default sound).
+    let resp = await pushoverPost(PUSHOVER_MESSAGES_URL, sound ? { ...message, sound } : message);
+    // A sound that Pushover does not know can give an HTTP 4xx answer that names the sound. A sound must not lose a
+    // notification: send it once more, without the sound. Another 4xx answer is a failure, as without a sound.
+    // A wrong sound name costs one refused request for each notification. The doctor command warns about it.
+    if (sound && resp.status >= 400 && resp.status < 500 && resp.status !== 429) {
+      let answer = '';
+      try {
+        answer = await readBody(resp);
+      } catch {
+        answer = ''; // The answer cannot be read or is too large.
+        try {
+          await resp.body?.cancel?.();
+        } catch {
+          // The answer is already closed.
+        }
+      }
+      if (!refusesSound(answer)) {
+        log(`Notification failed: HTTP ${resp.status}`);
+        return false;
+      }
+      log(`Pushover did not accept the sound "${sound}". The program sends this notification with the default sound.`);
+      resp = await pushoverPost(PUSHOVER_MESSAGES_URL, message);
+    }
     if (!resp.ok) {
       await resp.body?.cancel?.();
       log(isRedirect(resp.status) ? `Notification failed: HTTP ${resp.status}, ${REDIRECT_TEXT}` : `Notification failed: HTTP ${resp.status}`);
@@ -847,10 +908,11 @@ export async function pushover(cfg, title, text, priority = 'high', tags = 'warn
 }
 
 // Sends one notification through the service of notify_service. The arguments go unchanged to ntfy() or
-// pushover(). "off" writes the text to the log and sends nothing. "both" sends to the two services at the same
+// pushover(). The kind (open, still_open, closed, locked, silence, test) only picks the Pushover sound
+// (pushover_sounds). ntfy() does not get it. "off" writes the text to the log and sends nothing. "both" sends to the two services at the same
 // time. It counts as sent when one service accepted it: a retry after the other service failed would send the
 // notification again through the service that accepted it. A value that is not set uses ntfy, as before this setting.
-export async function notify(cfg, title, text, priority, tags) {
+export async function notify(cfg, title, text, priority, tags, kind) {
   if (cfg.notify_service === 'off') {
     log(`[notifications off] ${title}: ${text}`);
     return true;
@@ -864,14 +926,14 @@ export async function notify(cfg, title, text, priority, tags) {
       });
     const [viaNtfy, viaPushover] = await Promise.all([
       settle('ntfy', ntfy(cfg, title, text, priority, tags)),
-      settle('Pushover', pushover(cfg, title, text, priority, tags)),
+      settle('Pushover', pushover(cfg, title, text, priority, tags, soundFor(cfg, kind))),
     ]);
     if (viaNtfy !== viaPushover) {
       log(`${viaNtfy ? 'Pushover' : 'ntfy'} did not accept the notification. The other service did, so the program does not try again.`);
     }
     return viaNtfy || viaPushover;
   }
-  if (cfg.notify_service === 'pushover') return pushover(cfg, title, text, priority, tags);
+  if (cfg.notify_service === 'pushover') return pushover(cfg, title, text, priority, tags, soundFor(cfg, kind));
   return ntfy(cfg, title, text, priority, tags);
 }
 
@@ -904,6 +966,35 @@ export async function validatePushover(cfg) {
     ...(isObject && answer.user === 'invalid' ? ['the user key is not valid'] : []),
   ];
   return { ok: false, text: `Pushover refused the check: HTTP ${resp.status}${wrong.length ? `, ${wrong.join(' and ')}` : ''}.` };
+}
+
+// Asks Pushover for its list of sounds (doctor) and compares it with pushover_sounds. It sends no notification.
+// Returns null when no sound is set. Else { ok, text }. A sound that Pushover does not know is no failure: the program
+// sends that notification with the default sound. The text never has the token, the address or an error text.
+export async function checkPushoverSounds(cfg) {
+  const wanted = Object.entries(cfg.pushover_sounds ?? {});
+  if (wanted.length === 0) return null;
+  let resp;
+  try {
+    resp = await fetch(`${PUSHOVER_SOUNDS_URL}?token=${encodeURIComponent(String(cfg.pushover_token ?? ''))}`, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+  } catch (err) {
+    return { ok: false, text: `The Pushover sounds cannot be checked: no answer ${pushoverNoAnswer(cfg, err)}.` };
+  }
+  let answer = null;
+  try {
+    answer = JSON.parse(await readBody(resp));
+  } catch {
+    answer = null; // The answer cannot be read, is too large or is not JSON.
+  }
+  const list = resp.ok && answer !== null && typeof answer === 'object' && answer.sounds !== null && typeof answer.sounds === 'object' ? Object.keys(answer.sounds) : null;
+  if (!list) return { ok: false, text: `The Pushover sounds cannot be checked: HTTP ${resp.status}.` };
+  const unknown = wanted.filter(([, sound]) => !list.includes(sound));
+  if (unknown.length === 0) return { ok: true, text: 'Pushover knows the sounds of pushover_sounds.' };
+  const names = unknown.map(([kind, sound]) => `the sound "${sound}" (${kind})`).join(' and ');
+  return { ok: false, text: `Pushover does not know ${names}. The program sends these notifications with the default sound.` };
 }
 
 export function label(name, cfg = {}) {
@@ -1401,7 +1492,7 @@ export class Watcher {
       return;
     }
     if (this.holdForCharge()) return; // The next check asks again.
-    const sent = await notify(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'));
+    const sent = await notify(this.cfg, withName(t.lockedTitle, this.name()), t.lockedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'locked'), 'locked');
     if (!this.notifyResult(sent)) return;
     this.confirmedAt = now;
     this.lastSentAt = now;
@@ -1452,7 +1543,7 @@ export class Watcher {
       if (this.alerted && this.sawClose) {
         if (this.clock() - this.allClosedSince < CLOSED_SETTLE_S) return; // A door may open next. The next check asks again.
         if (this.holdForCharge()) return;
-        const sent = await notify(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'));
+        const sent = await notify(this.cfg, withName(t.closedTitle, this.name()), t.closedBody + this.detailsText(t), 'default', tagFor(this.cfg, 'closed'), 'closed');
         if (!this.notifyResult(sent)) return;
         this.alerted = false;
         this.sawClose = false;
@@ -1491,7 +1582,7 @@ export class Watcher {
       }
       const items = [...groups].map(([when, names]) => `${describeParts(names, this.cfg, this.openValue)} ${when}`).join(', ');
       const title = withName((added ? t.openTitle : t.stillOpenTitle)[this.lockKind()], this.name());
-      const sent = await notify(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'));
+      const sent = await notify(this.cfg, title, t.openBody(items) + (added ? this.detailsText(t) : ''), 'high', tagFor(this.cfg, added ? 'open' : 'still_open'), added ? 'open' : 'still_open');
       if (!this.notifyResult(sent)) return;
       this.alerted = true;
       this.reminders = added ? 0 : this.reminders + 1;
@@ -1566,7 +1657,7 @@ export class Fleet {
     if (!hours || this.silenceAlerted || this.clock() < this.silenceRetryAt) return;
     if (this.clock() - (this.lastMessageAt || this.startedAt) < hours * 3600) return;
     const t = textFor(this.cfg);
-    if (await notify(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', tagFor(this.cfg, 'silence'))) {
+    if (await notify(this.cfg, t.silenceTitle, t.silenceBody(hours), 'default', tagFor(this.cfg, 'silence'), 'silence')) {
       this.silenceAlerted = true;
       this.dirty = true;
     } else {
@@ -1955,6 +2046,9 @@ async function doctor({ offline = false } = {}) {
     if (usesPushover(cfg)) {
       const result = await validatePushover(cfg);
       report(result.ok ? 'OK' : 'FAIL', result.text);
+      // A sound problem is a warning: the program still sends the notification, with the default sound.
+      const sounds = result.ok ? await checkPushoverSounds(cfg) : null;
+      if (sounds) report(sounds.ok ? 'OK' : 'WARN', sounds.text);
     }
   }
   try {
@@ -1989,7 +2083,7 @@ async function main() {
     } else if (command === 'pushover-test') {
       // The same texts as ntfy-test. It sends a real notification through Pushover, whatever notify_service is.
       const t = textFor(cfg);
-      const accepted = await pushover(cfg, t.testTitle, t.testBody, 'default', tagFor(cfg, 'test'));
+      const accepted = await pushover(cfg, t.testTitle, t.testBody, 'default', tagFor(cfg, 'test'), soundFor(cfg, 'test'));
       log(accepted ? 'Result: Pushover accepted the test notification. Check the phone.' : 'Result: Pushover did not accept the test notification. See the line above.');
       process.exit(accepted ? 0 : 1);
     } else {

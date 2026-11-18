@@ -31,6 +31,7 @@ pushover.net'e göre yalnız acil öncelik bir alındı onayı verir. Program bu
 | `notify_service` | `ntfy` | Tüm bildirimleri yollayan servis: `ntfy`, `pushover`, `both` veya `off`. Aşağıdaki tablo her değeri gösteriyor. |
 | `pushover_token` | boş | Pushover uygulamanın API token'ı. 30 harf ve rakam. Gizli tut. |
 | `pushover_user` | boş | Pushover kullanıcı anahtarın (user key) ya da bir teslim grubu anahtarı (delivery group key). 30 harf ve rakam. Gizli tut. |
+| `pushover_sounds` | `{}` | Her bildirim türü için ses. Bkz. [Sesler](#sesler). |
 
 | `notify_service` değeri | Bildirimler nereye gider | Programın istediği ayarlar |
 |---|---|---|
@@ -141,6 +142,25 @@ Program başlamazsa log hatalı ayarı gösterir. Ayarı düzelt ve servisi yeni
 
 ntfy servisi `ntfy_topic` ayarını ister. Bu ayarı sildiysen yeniden başlatmadan önce tekrar yaz. Bu ayar olmadan program başlamaz. Pushover anahtarları `config.json` içinde kalabilir. `ntfy` seçiliyken program onları kullanmaz.
 
+## Sesler
+
+Varsayılan olarak Pushover uygulaması her bildirimde kendi varsayılan sesini çalar. `pushover_sounds` ayarı, her bildirim türü için bir ses seçer. Yalnız Pushover bu ayarı kullanır. ntfy mesajında ses ayarı yok.
+
+Örnek. Bir parça açık: `echo` sesi. Her şey kapalı: varsayılan ses.
+
+```json
+  "pushover_sounds": {"open": "echo", "still_open": "echo"},
+```
+
+- Türler: `open` (parça açık), `still_open` (parça hala açık), `closed` (her şey kapandı), `locked` (kilitlendi, her şey kapalı), `silence` ve `test`. Listede olmayan tür, Pushover uygulamasının varsayılan sesini kullanır.
+- Değer, bir Pushover sesinin adıdır. Örnek: `echo`, `siren` veya `magic`. pushover.net'e göre adlar: `pushover`, `bike`, `bugle`, `cashregister`, `classical`, `cosmic`, `falling`, `gamelan`, `incoming`, `intermission`, `magic`, `mechanical`, `pianobar`, `siren`, `spacealarm`, `tugboat`, `alien`, `climb`, `persistent`, `echo`, `updown`, `vibrate` ve `none`. `none` değeri sessiz demektir. Uygulamanın Pushover hesabına yüklediğin özel bir ses de çalışır. Adını yaz.
+- Satırı `config.json` dosyasına 2. bölümdeki anahtarlar gibi ekle: `{` satırının hemen altına. Satır virgülle biter. Sonra `sudo mini-watch doctor --offline` komutunu çalıştır. Sonra servisi yeniden başlat.
+- Yanlış bir tür ya da yanlış biçimli bir ad programı başlangıçta durdurur. Log sebebi gösterir.
+- `sudo mini-watch doctor` Pushover'dan ses listesini ister. Pushover'ın tanımadığı bir ad `WARN` olarak görünür.
+- Yanlış bir ad bildirimi kaybettirmez. Pushover sesi, sesi adıyla belirten bir yanıtla reddederse program bildirimi varsayılan sesle yeniden yollar. Log'da bir satır bunu söyler. Her bildirim o zaman iki istek gerektirir, bu yüzden adı düzelt.
+- Öncelik değişmez. "Parça açık" bildirimi 1 önceliğiyle gider. Ses ve öncelik iki ayrı ayardır.
+- **Henüz bir telefonda denenmedi.**
+
 ## Neler aynı kalır?
 
 - Varsayılan servis `ntfy`. `notify_service` içermeyen bir `config.json` eskisi gibi çalışır.
@@ -166,6 +186,7 @@ ntfy servisi `ntfy_topic` ayarını ister. Bu ayarı sildiysen yeniden başlatma
 | `Set "pushover_token" ...` veya `"pushover_user" must have 30 letters and digits ...` | Program başlamadı. `config.json` içindeki bir anahtar eksik ya da hatalı. Metin değeri göstermez. |
 | `"notify_service" must be "off", "ntfy", "pushover" or "both" ...` | Program başlamadı. `config.json` içindeki değeri düzelt. |
 | `ntfy did not accept the notification. The other service did, so the program does not try again.` (veya `Pushover did not ...`) | Yalnız `both` seçiliyken görünür. Bir servis bildirimi kabul etti, diğeri etmedi. Daha önceki bir satır sebebi söyler. Program bildirimi gönderilmiş sayar. |
+| `Pushover did not accept the sound "echo". The program sends this notification with the default sound.` | Pushover ses adını reddetti. Program bildirimi ses seçmeden, varsayılan sesle yeniden yolladı. `pushover_sounds` içindeki adı kontrol et. `sudo mini-watch doctor` Pushover'ın tanımadığı sesleri söyler. |
 
 Yeniden denemeler ntfy ile aynı kurallara uyar. [4. adımdaki](05-isletim.md#log-satırları-ne-anlama-gelir) `Notification failed` satırına bak.
 

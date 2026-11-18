@@ -79,6 +79,7 @@ sudo systemctl restart mini-watch
 | `vehicle_names` | `{}` | Names for the cars of an account with more than one car. Example: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | The address of your own ntfy server |
 | `notify_service` | `ntfy` | The service for all notifications: `ntfy`, `pushover`, `both` or `off`. See [Pushover](06-pushover.md). |
+| `pushover_sounds` | `{}` | The Pushover sound for each kind of notification. Example: `{"open": "echo", "still_open": "echo"}`. A missing kind uses the default sound of the Pushover app. Only Pushover uses it. See [Sounds](06-pushover.md#sounds). |
 | `pushover_token` | empty | The API token of your Pushover application (30 letters and digits). Secret. Only used with `pushover` and `both`, and by `pushover-test`. |
 | `pushover_user` | empty | Your Pushover user key or a delivery group key (30 letters and digits). Secret. Only used with `pushover` and `both`, and by `pushover-test`. |
 

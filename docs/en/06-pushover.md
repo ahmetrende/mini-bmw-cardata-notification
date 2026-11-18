@@ -31,6 +31,7 @@ According to pushover.net, only the emergency priority gives a receipt. The prog
 | `notify_service` | `ntfy` | The service for all notifications: `ntfy`, `pushover`, `both` or `off`. The table below shows each value. |
 | `pushover_token` | empty | The API token of your Pushover application. 30 letters and digits. Keep it secret. |
 | `pushover_user` | empty | Your Pushover user key, or a delivery group key. 30 letters and digits. Keep it secret. |
+| `pushover_sounds` | `{}` | The sound for each kind of notification. See [Sounds](#sounds). |
 
 | Value of `notify_service` | The notifications go to | The program needs |
 |---|---|---|
@@ -141,6 +142,25 @@ If the program does not start, the log shows the wrong setting. Correct it and r
 
 The ntfy service needs `ntfy_topic`. If you deleted that setting, write it again before the restart. Without it, the program does not start. The Pushover keys can stay in `config.json`. With `ntfy`, the program does not use them.
 
+## Sounds
+
+By default, the Pushover app plays its default sound for each notification. The setting `pushover_sounds` sets a sound for each kind of notification. Only Pushover uses it. A message to ntfy has no sound setting.
+
+Example. A part is open: the sound `echo`. Everything is closed: the default sound.
+
+```json
+  "pushover_sounds": {"open": "echo", "still_open": "echo"},
+```
+
+- The kinds are `open` (a part is open), `still_open` (a part is still open), `closed` (everything is closed), `locked` (locked, everything is closed), `silence` and `test`. A kind that is not in the list uses the default sound of the Pushover app.
+- A value is the name of a Pushover sound, for example `echo`, `siren` or `magic`. According to pushover.net, the names are: `pushover`, `bike`, `bugle`, `cashregister`, `classical`, `cosmic`, `falling`, `gamelan`, `incoming`, `intermission`, `magic`, `mechanical`, `pianobar`, `siren`, `spacealarm`, `tugboat`, `alien`, `climb`, `persistent`, `echo`, `updown`, `vibrate` and `none`. The value `none` means no sound. A custom sound that you upload to the Pushover account of the application works too. Write its name.
+- Add the line to `config.json` in the same way as the keys in part 2: directly after the `{` line. The line ends with a comma. Then run `sudo mini-watch doctor --offline`. Then restart the service.
+- A wrong kind or a wrong form of a name stops the program at the start. The log shows the reason.
+- `sudo mini-watch doctor` asks Pushover for its list of sounds. A name that Pushover does not know shows as `WARN`.
+- A wrong name does not lose a notification. If Pushover refuses the sound with an answer that names the sound, the program sends the notification again with the default sound. A log line says it. Each notification then needs two requests, so correct the name.
+- The priority does not change. "A part is open" has priority 1. The sound and the priority are two separate settings.
+- **Not yet tested on a phone.**
+
 ## What stays the same
 
 - The default service is `ntfy`. A `config.json` without `notify_service` works as before.
@@ -166,6 +186,7 @@ The ntfy service needs `ntfy_topic`. If you deleted that setting, write it again
 | `Set "pushover_token" ...` or `"pushover_user" must have 30 letters and digits ...` | The program did not start. A key in `config.json` is missing or wrong. The text does not show the value. |
 | `"notify_service" must be "off", "ntfy", "pushover" or "both" ...` | The program did not start. Correct the value in `config.json`. |
 | `ntfy did not accept the notification. The other service did, so the program does not try again.` (or `Pushover did not ...`) | Only with `both`. One service accepted the notification and the other did not. An earlier line names the reason. The program counts the notification as sent. |
+| `Pushover did not accept the sound "echo". The program sends this notification with the default sound.` | Pushover refused the sound name. The program sent the notification again, without the sound. Check the name in `pushover_sounds`. `sudo mini-watch doctor` names the sounds that Pushover does not know. |
 
 The retries follow the same rules as with ntfy. See the line `Notification failed` in [Step 4](05-operations.md#log-lines).
 

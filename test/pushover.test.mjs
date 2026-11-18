@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEFAULT_CONFIG, Fleet, Watcher, checkConfig, checkPushover, notify, ntfy, pushover, pushoverTitle, validatePushover } from '../mini_watch.mjs';
+import { DEFAULT_CONFIG, Fleet, Watcher, checkConfig, checkPushover, checkPushoverSounds, notify, ntfy, pushover, pushoverTitle, soundFor, validatePushover } from '../mini_watch.mjs';
 
 const TOKEN = 'faketoken0123456789ABCDEFGHIJK';
 const USER = 'fakeuserkey0123456789abcdefghi';
@@ -1140,5 +1140,309 @@ test('doctor: online with "both" ntfy and Pushover are both checked and both are
     assert.ok(result.stdout.includes('WARN ntfy server https://ntfy.invalid: HTTP 503. The service sends no notification now, so this is a warning only.'), result.stdout);
     assert.deepEqual(failures(result), ['FAIL BMW stream server cannot be reached: blocked by the test']);
     assert.ok(!result.requests.some((request) => String(request.url).includes('pushover')), 'Pushover not asked');
+  });
+});
+
+// ---- pushover_sounds: the Pushover sound for each kind of notification ----
+
+const SOUNDS_URL = 'https://api.pushover.net/1/sounds.json';
+const SOUND_REFUSED = JSON.stringify({ sound: 'invalid', errors: ['sound is invalid'], status: 0, request: REQUEST });
+const KINDS = ['open', 'still_open', 'closed', 'locked', 'silence', 'test'];
+// The wish of the user: a part is open: "echo". Everything is closed: the default sound.
+const echoCfg = { ...pushCfg, pushover_sounds: { open: 'echo', still_open: 'echo' } };
+
+test('sounds: the default has no sound, the request is the request of before (no sound field)', async () => {
+  assert.deepEqual(DEFAULT_CONFIG.pushover_sounds, {});
+  for (const kind of KINDS) {
+    const { requests } = await withFetch(reply(ACCEPTED), () => notify(pushCfg, 'MINI', 'Everything is closed.', 'default', 'lock', kind));
+    assert.deepEqual(fields(requests[0]).map(([name]) => name), ['token', 'user', 'title', 'message', 'priority'], kind);
+  }
+  const noKind = await withFetch(reply(ACCEPTED), () => notify(echoCfg, 'MINI', 'x', 'high', 'warning'));
+  assert.ok(!('sound' in form(noKind.requests[0])), 'a call without a kind gets no sound');
+});
+
+test('sounds: a part is open gives echo, everything is closed gives the default sound', async () => {
+  const sent = {};
+  for (const kind of KINDS) {
+    const { requests, result } = await withFetch(reply(ACCEPTED), () => notify(echoCfg, 'MINI', 'text', kind.includes('open') ? 'high' : 'default', 'warning', kind));
+    assert.equal(result, true);
+    assert.equal(requests.length, 1);
+    sent[kind] = form(requests[0]).sound;
+  }
+  assert.deepEqual(sent, { open: 'echo', still_open: 'echo', closed: undefined, locked: undefined, silence: undefined, test: undefined });
+  // The sound is the last field. The other fields do not change.
+  const { requests } = await withFetch(reply(ACCEPTED), () => notify(echoCfg, 'MINI', 'text', 'high', 'warning', 'open'));
+  assert.deepEqual(fields(requests[0]).map(([name]) => name), ['token', 'user', 'title', 'message', 'priority', 'sound']);
+});
+
+test('sounds: with "both" only the Pushover request gets the sound, the ntfy request does not change', async () => {
+  const run = async (cfg) => {
+    const { requests } = await withFetch((url) => new Response(String(url).includes('pushover') ? ACCEPTED : NTFY_ANSWER), () => notify(cfg, 'MINI', 'text', 'high', 'warning', 'open'));
+    return { ntfy: requests.find((request) => request.url.includes('ntfy.invalid')), pushover: requests.find((request) => request.url.includes('pushover')) };
+  };
+  const without = await run({ ...pushCfg, notify_service: 'both' });
+  const withSound = await run({ ...echoCfg, notify_service: 'both' });
+  assert.equal(withSound.ntfy.body, without.ntfy.body);
+  assert.deepEqual(withSound.ntfy.options.headers, without.ntfy.options.headers);
+  assert.ok(!withSound.ntfy.body.includes('echo'));
+  assert.equal(form(withSound.pushover).sound, 'echo');
+  assert.ok(!('sound' in form(without.pushover)));
+});
+
+test('sounds: with "ntfy" the sound setting changes nothing', async () => {
+  const direct = await withFetch(reply(NTFY_ANSWER), () => notify({ ...ntfyCfg }, 'MINI', 'text', 'high', 'warning', 'open'));
+  const withSound = await withFetch(reply(NTFY_ANSWER), () => notify({ ...ntfyCfg, pushover_sounds: { open: 'echo' } }, 'MINI', 'text', 'high', 'warning', 'open'));
+  assert.equal(withSound.requests.length, 1);
+  assert.equal(withSound.requests[0].body, direct.requests[0].body);
+});
+
+test('sounds: a refused sound is sent again without the sound, the notification is not lost', async () => {
+  let call = 0;
+  const { result, requests, lines } = await withFetch(
+    () => new Response(++call === 1 ? SOUND_REFUSED : ACCEPTED, { status: call === 1 ? 400 : 200 }),
+    () => pushover(echoCfg, 'MINI: a part is open', 'Sunroof', 'high', 'warning', 'echo'),
+  );
+  assert.equal(result, true);
+  assert.equal(requests.length, 2);
+  assert.equal(form(requests[0]).sound, 'echo');
+  assert.ok(!('sound' in form(requests[1])), 'the second request has no sound');
+  const { sound, ...first } = form(requests[0]);
+  assert.equal(sound, 'echo');
+  assert.deepEqual(form(requests[1]), first, 'the second request is the first one without the sound');
+  assert.deepEqual(lines, [
+    'Pushover did not accept the sound "echo". The program sends this notification with the default sound.',
+    `Notification accepted by Pushover: MINI: a part is open: Sunroof (request ${REQUEST}, HTTP 200)`,
+  ]);
+  assertNoSecret(lines.join('\n'));
+});
+
+test('sounds: another 4xx answer (no word "sound") is a failure with one request, as without a sound', async () => {
+  for (const [status, body] of [[400, JSON.stringify({ token: 'invalid', errors: ['application token is invalid'], status: 0 })], [401, 'no'], [404, ''], [400, 'x'.repeat(20000)]]) {
+    const { result, requests, lines } = await withFetch(reply(body, status), () => pushover(echoCfg, 't', 'm', 'high', 'warning', 'echo'));
+    assert.equal(result, false, `${status}`);
+    assert.equal(requests.length, 1, `${status}: no second request`);
+    assert.deepEqual(lines, [`Notification failed: HTTP ${status}`]);
+  }
+});
+
+test('sounds: a 4xx answer that names the sound and also another field or error is no sound problem: one request', async () => {
+  const bodies = [
+    JSON.stringify({ user: 'invalid', sound: 'invalid', errors: ['user identifier is invalid', 'sound is invalid'], status: 0 }),
+    JSON.stringify({ token: 'invalid', sound: 'invalid', status: 0 }),
+    JSON.stringify({ errors: ['sound is invalid', 'message cannot be blank'], status: 0 }),
+    '<html><body>Bad request: sound</body></html>',
+    '["sound"]',
+    'sound',
+  ];
+  for (const body of bodies) {
+    const { result, requests, lines } = await withFetch(reply(body, 400), () => pushover(echoCfg, 't', 'm', 'high', 'warning', 'echo'));
+    assert.equal(result, false, body);
+    assert.equal(requests.length, 1, `no second request: ${body}`);
+    assert.deepEqual(lines, ['Notification failed: HTTP 400'], body);
+  }
+});
+
+test('sounds: an answer with only the errors list that names the sound is a refused sound too', async () => {
+  let call = 0;
+  const { result, requests } = await withFetch(
+    () => new Response(++call === 1 ? JSON.stringify({ errors: ['sound is invalid'], status: 0, request: REQUEST }) : ACCEPTED, { status: call === 1 ? 400 : 200 }),
+    () => pushover(echoCfg, 't', 'm', 'high', 'warning', 'echo'),
+  );
+  assert.equal(result, true);
+  assert.equal(requests.length, 2);
+});
+
+test('sounds: a refused answer that is larger than the limit is a failure with one request, no exception', async () => {
+  const { result, requests, lines } = await withFetch(reply(`{"sound":"invalid"}${' '.repeat(70 * 1024)}`, 400), () => pushover(echoCfg, 't', 'm', 'high', 'warning', 'echo'));
+  assert.equal(result, false);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(lines, ['Notification failed: HTTP 400']);
+});
+
+test('sounds: HTTP 429, a redirect and an HTTP 5xx answer are no sound problem: one request, a retry later', async () => {
+  for (const status of [429, 500, 503, 307]) {
+    const { result, requests, lines } = await withFetch(reply(SOUND_REFUSED, status), () => pushover(echoCfg, 't', 'm', 'high', 'warning', 'echo'));
+    assert.equal(result, false, `${status}`);
+    assert.equal(requests.length, 1, `${status}`);
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], new RegExp(`^Notification failed: HTTP ${status}`));
+  }
+});
+
+test('sounds: the sound is refused and the second request fails too: a failure, two requests, the log says both', async () => {
+  let call = 0;
+  const { result, requests, lines } = await withFetch(
+    () => new Response(++call === 1 ? SOUND_REFUSED : JSON.stringify({ token: 'invalid', status: 0 }), { status: 400 }),
+    () => pushover(echoCfg, 't', 'm', 'high', 'warning', 'echo'),
+  );
+  assert.equal(result, false);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(lines, ['Pushover did not accept the sound "echo". The program sends this notification with the default sound.', 'Notification failed: HTTP 400']);
+});
+
+test('sounds: without a sound a 4xx answer does the same as before (one request)', async () => {
+  const { result, requests, lines } = await withFetch(reply(SOUND_REFUSED, 400), () => pushover(pushCfg, 't', 'm', 'high', 'warning'));
+  assert.equal(result, false);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(lines, ['Notification failed: HTTP 400']);
+});
+
+test('soundFor: the sound of a kind, or an empty text', () => {
+  assert.equal(soundFor(echoCfg, 'open'), 'echo');
+  assert.equal(soundFor(echoCfg, 'closed'), '');
+  assert.equal(soundFor(echoCfg, undefined), '');
+  assert.equal(soundFor({}, 'open'), '');
+  assert.equal(soundFor({ pushover_sounds: { open: 5 } }, 'open'), '');
+});
+
+test('checkConfig: pushover_sounds is an object of known kinds with sound names', () => {
+  checkConfig({ ...ntfyCfg, pushover_sounds: {} });
+  checkConfig({ ...ntfyCfg, pushover_sounds: { open: 'echo', still_open: 'echo', closed: 'magic' } });
+  checkConfig({ ...ntfyCfg, pushover_sounds: { open: 'my-custom_sound1' } });
+  for (const bad of [null, [], 'echo', 5, { nope: 'echo' }, { open: 5 }, { open: '' }, { open: 'e cho' }, { open: 'echo!' }, { open: 'x'.repeat(41) }, { open: null }]) {
+    assert.throws(() => checkConfig({ ...ntfyCfg, pushover_sounds: bad }), /pushover_sounds/, JSON.stringify(bad));
+  }
+  assert.throws(() => checkConfig({ ...ntfyCfg, pushover_sounds: { open: 'e cho' } }), /Now it is "e cho"/);
+  assert.throws(() => checkConfig({ ...ntfyCfg, pushover_sounds: { nope: 'echo' } }), /unknown kind "nope"/);
+});
+
+test('watcher: with the sounds of the user, the open part alert has echo and "everything is closed" has none', async () => {
+  let clock = 1000;
+  const watcher = new Watcher({ ...echoCfg, timezone: 'UTC', alert_after_min: 0, lock_confirm: true }, { clock: () => clock, random: () => 0.5 });
+  const { requests } = await withFetch(reply(ACCEPTED), async () => {
+    watcher.onData(msg({ [KM]: 100, [WIN]: 'OPEN' }), clock - 5000);
+    await watcher.check(); // a part is open
+    clock += 1800;
+    await watcher.check(); // the reminder
+    watcher.onData(msg({ [WIN]: 'CLOSED' }), clock);
+    clock += 15;
+    await watcher.check(); // everything is closed
+    clock += 600;
+    watcher.onData(msg({ [DRIVER_DOOR]: true }), clock);
+    watcher.onData(msg({ [DRIVER_DOOR]: false }), clock + 5);
+    clock += 200;
+    watcher.onData(msg({ [LOCK]: 'SECURED' }), clock);
+    await watcher.check(); // lock confirmation
+  });
+  const titles = requests.map((request) => [form(request).title, form(request).sound]);
+  assert.equal(requests.length, 4, JSON.stringify(titles));
+  assert.deepEqual(requests.map((request) => form(request).sound), ['echo', 'echo', undefined, undefined], JSON.stringify(titles));
+});
+
+// ---- checkPushoverSounds() (doctor) ----
+
+const SOUND_LIST = JSON.stringify({ sounds: { pushover: 'Pushover (default)', echo: 'Pushover Echo (long)', magic: 'Magic' }, status: 1, request: REQUEST });
+
+test('checkPushoverSounds: no sound is set: null, no request', async () => {
+  const { result, requests } = await withFetch(reply(SOUND_LIST), () => checkPushoverSounds(pushCfg));
+  assert.equal(result, null);
+  assert.equal(requests.length, 0);
+});
+
+test('checkPushoverSounds: known sounds are OK, the request is a GET with the token and does not follow a redirect', async () => {
+  const { result, requests } = await withFetch(reply(SOUND_LIST), () => checkPushoverSounds(echoCfg));
+  assert.deepEqual(result, { ok: true, text: 'Pushover knows the sounds of pushover_sounds.' });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, `${SOUNDS_URL}?token=${TOKEN}`);
+  assert.equal(requests[0].options.method, undefined, 'a GET request');
+  assert.equal(requests[0].options.redirect, 'manual');
+  assert.ok(requests[0].options.signal instanceof AbortSignal);
+  assertNoSecret(result.text);
+});
+
+test('checkPushoverSounds: a sound that Pushover does not know is named with its kind, without the token', async () => {
+  const { result } = await withFetch(reply(SOUND_LIST), () => checkPushoverSounds({ ...pushCfg, pushover_sounds: { open: 'ecco', closed: 'magic', locked: 'nope' } }));
+  assert.equal(result.ok, false);
+  assert.equal(result.text, 'Pushover does not know the sound "ecco" (open) and the sound "nope" (locked). The program sends these notifications with the default sound.');
+  assertNoSecret(result.text);
+});
+
+test('checkPushoverSounds: an error answer, a wrong answer or a network error says it cannot check, without secrets', async () => {
+  const cases = [
+    [reply('{"status":0}', 400), /^The Pushover sounds cannot be checked: HTTP 400\.$/],
+    [reply('not json', 200), /^The Pushover sounds cannot be checked: HTTP 200\.$/],
+    [reply('{"sounds":null}', 200), /^The Pushover sounds cannot be checked: HTTP 200\.$/],
+    [reply('', 307), /^The Pushover sounds cannot be checked: HTTP 307\.$/],
+    [() => { throw Object.assign(new TypeError(`fetch failed ${SOUNDS_URL}?token=${TOKEN}`), { cause: { code: 'ENOTFOUND' } }); }, /^The Pushover sounds cannot be checked: no answer \(ENOTFOUND\)\.$/],
+  ];
+  for (const [answer, pattern] of cases) {
+    const { result } = await withFetch(answer, () => checkPushoverSounds(echoCfg));
+    assert.equal(result.ok, false);
+    assert.match(result.text, pattern);
+    assertNoSecret(result.text);
+  }
+});
+
+test('sounds: the silence notification and pushover-test use the sound of their kind', async () => {
+  let clock = 0;
+  const fleet = new Fleet({ ...pushCfg, pushover_sounds: { silence: 'magic' }, silence_alert_hours: 1 }, { clock: () => clock });
+  clock = 7200;
+  const { requests } = await withFetch(reply(ACCEPTED), () => fleet.checkSilence());
+  assert.equal(requests.length, 1);
+  assert.equal(form(requests[0]).sound, 'magic');
+  await withProgram(({ run, writeConfig }) => {
+    writeConfig({ client_id: CLIENT_ID, notify_service: 'ntfy', ntfy_topic: TOPIC, pushover_token: TOKEN, pushover_user: USER, pushover_sounds: { test: 'magic', open: 'echo' } });
+    const result = run(['pushover-test'], { plan: PUSHOVER_OK });
+    assert.equal(result.status, 0, result.out);
+    assert.deepEqual(
+      [...new URLSearchParams(result.requests[0].body)].map(([name]) => name),
+      ['token', 'user', 'title', 'message', 'priority', 'sound'],
+    );
+    assert.equal(new URLSearchParams(result.requests[0].body).get('sound'), 'magic');
+    assertNoSecret(result.out);
+  });
+});
+
+// ---- doctor: the sounds step ----
+
+const SOUND_PLAN = (sounds) => ({
+  'ntfy.invalid': [{ status: 200, body: { healthy: true } }],
+  'api.pushover.net': [
+    { status: 200, body: { status: 1, request: REQUEST } },
+    { status: 200, body: { sounds, status: 1, request: REQUEST } },
+  ],
+});
+// The FAIL lines and the WARN lines about sounds. Other warnings (an empty topic, no car message yet) do not matter here.
+const problems = (result) => result.stdout.split('\n').filter((text) => text.startsWith('FAIL') || (text.startsWith('WARN') && /sound/i.test(text)));
+const BMW_FAIL = 'FAIL BMW stream server cannot be reached: blocked by the test';
+
+test('doctor: with pushover_sounds a known sound is OK and an unknown sound is only a warning', async () => {
+  await withProgram(({ dir, run, writeConfig }) => {
+    writeFileSync(join(dir, 'tokens.json'), TOKENS_FILE, { mode: 0o600 });
+    writeConfig({ client_id: CLIENT_ID, ntfy_server: 'https://ntfy.invalid', notify_service: 'pushover', pushover_token: TOKEN, pushover_user: USER, pushover_sounds: { open: 'echo', still_open: 'echo' } });
+    let result = run(['doctor'], { plan: SOUND_PLAN({ pushover: 'Pushover', echo: 'Echo' }) });
+    assert.match(result.stdout, /^OK {3}Pushover knows the sounds of pushover_sounds\.$/m);
+    assert.deepEqual(problems(result), [BMW_FAIL]);
+    const asked = result.requests.filter((request) => request.url?.includes('sounds.json'));
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].method, 'GET');
+    assertNoSecret(result.out);
+    // An unknown sound: a warning line. The exit code is the same as before (the BMW line fails in the test).
+    result = run(['doctor'], { plan: SOUND_PLAN({ pushover: 'Pushover' }) });
+    assert.deepEqual(problems(result), [
+      'WARN Pushover does not know the sound "echo" (open) and the sound "echo" (still_open). The program sends these notifications with the default sound.',
+      BMW_FAIL,
+    ]);
+    assertNoSecret(result.out);
+    // The list cannot be read: a warning too.
+    result = run(['doctor'], { plan: { ...SOUND_PLAN({}), 'api.pushover.net': [{ status: 200, body: { status: 1, request: REQUEST } }, { status: 500, body: 'down' }] } });
+    assert.deepEqual(problems(result), ['WARN The Pushover sounds cannot be checked: HTTP 500.', BMW_FAIL]);
+  });
+});
+
+test('doctor: no sounds request without pushover_sounds, with "ntfy", or when Pushover refuses the keys', async () => {
+  await withProgram(({ dir, run, writeConfig }) => {
+    writeFileSync(join(dir, 'tokens.json'), TOKENS_FILE, { mode: 0o600 });
+    const base = { client_id: CLIENT_ID, ntfy_server: 'https://ntfy.invalid', pushover_token: TOKEN, pushover_user: USER };
+    const soundRequests = (result) => result.requests.filter((request) => request.url?.includes('sounds.json'));
+    writeConfig({ ...base, notify_service: 'pushover' });
+    assert.equal(soundRequests(run(['doctor'], { plan: SOUND_PLAN({ echo: 'Echo' }) })).length, 0, 'no sound is set');
+    writeConfig({ ...base, notify_service: 'ntfy', pushover_sounds: { open: 'echo' } });
+    const ntfyOnly = run(['doctor'], { plan: SOUND_PLAN({ echo: 'Echo' }) });
+    assert.equal(ntfyOnly.requests.filter((request) => request.url?.includes('pushover')).length, 0, 'with ntfy nothing goes to Pushover');
+    writeConfig({ ...base, notify_service: 'both', ntfy_topic: TOPIC, pushover_sounds: { open: 'echo' } });
+    const refused = run(['doctor'], { plan: { 'ntfy.invalid': [{ status: 200, body: { healthy: true } }], 'api.pushover.net': [{ status: 400, body: { user: 'invalid', status: 0 } }] } });
+    assert.equal(soundRequests(refused).length, 0, 'the keys are refused: no sounds request');
+    assert.ok(problems(refused).some((text) => text.startsWith('FAIL Pushover refused')), refused.stdout);
   });
 });

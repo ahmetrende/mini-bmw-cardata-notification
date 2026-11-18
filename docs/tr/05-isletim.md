@@ -81,6 +81,7 @@ sudo systemctl restart mini-watch
 | `vehicle_names` | `{}` | Hesapta birden fazla araç varsa araçların adları. Örnek: `{"VIN-OF-CAR-1": "Countryman"}` |
 | `ntfy_server` | `https://ntfy.sh` | Kendi ntfy sunucunun adresi |
 | `notify_service` | `ntfy` | Tüm bildirimleri yollayan servis: `ntfy`, `pushover`, `both` veya `off`. Bkz. [Pushover](06-pushover.md). |
+| `pushover_sounds` | `{}` | Her bildirim türü için Pushover sesi. Örnek: `{"open": "echo", "still_open": "echo"}`. Listede olmayan tür, Pushover uygulamasının varsayılan sesini kullanır. Yalnız Pushover kullanır. Bkz. [Sesler](06-pushover.md#sesler). |
 | `pushover_token` | boş | Pushover uygulamanın API token'ı (30 harf ve rakam). Gizli. Yalnız `pushover` ve `both` seçiliyken ve `pushover-test` komutunda kullanılır. |
 | `pushover_user` | boş | Pushover kullanıcı anahtarın ya da bir teslim grubu anahtarı (30 harf ve rakam). Gizli. Yalnız `pushover` ve `both` seçiliyken ve `pushover-test` komutunda kullanılır. |
 
