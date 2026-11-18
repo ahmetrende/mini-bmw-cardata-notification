@@ -80,7 +80,9 @@ cleanup_releases() {
 wait_healthy() {
   local deadline=$(($(date +%s) + HEALTH_WAIT_S))
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if journalctl -u mini-watch --since "@$1" -o cat --no-pager 2>/dev/null | grep -q "Subscribed: "; then
+    # No "grep -q": it exits at the first match. With a busy log (the car sends messages), journalctl then gets
+    # SIGPIPE, and "set -o pipefail" makes the whole check fail. grep must read all the lines.
+    if journalctl -u mini-watch --since "@$1" -o cat --no-pager 2>/dev/null | grep "Subscribed: " >/dev/null; then
       return 0
     fi
     sleep 3

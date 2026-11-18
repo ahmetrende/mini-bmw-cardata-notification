@@ -82,3 +82,34 @@ test('log clean-up: the guides name the same number of days', () => {
   assert.match(read('docs/en/04-server-setup.md'), new RegExp(`log of the last ${days} days`));
   assert.match(read('docs/tr/04-sunucu-kurulumu.md'), new RegExp(`Son ${days} günün log`));
 });
+
+// ---- install.sh: the health check after the restart ----
+
+// Runs wait_healthy of install.sh in bash with `set -euo pipefail`, as the script does. journalctl is a fake: it prints
+// `before` lines, the "Subscribed" line (when `subscribed` is true) and `after` more lines. The car sends many messages,
+// so a real log has many lines after "Subscribed". Returns "healthy" or "unhealthy".
+function healthCheck({ subscribed, after }) {
+  const source = read('deploy/install.sh').match(/^wait_healthy\(\) \{\n[\s\S]*?^\}$/m)[0];
+  const script = [
+    'set -euo pipefail',
+    'HEALTH_WAIT_S=1',
+    'sleep() { :; }',
+    `journalctl() { ${subscribed ? 'echo "Subscribed: qos0";' : ''} seq 1 ${after}; }`,
+    source,
+    'if wait_healthy 0; then echo healthy; else echo unhealthy; fi',
+  ].join('\n');
+  const run = spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 30_000 });
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout.trim();
+}
+
+test('install.sh health check: it sees "Subscribed" in a short log and in a busy log (more lines than a pipe holds)', () => {
+  assert.equal(healthCheck({ subscribed: true, after: 3 }), 'healthy');
+  // grep -q would stop at the first match. journalctl then gets SIGPIPE, and pipefail made the check fail (14 Nov 2026).
+  assert.equal(healthCheck({ subscribed: true, after: 60000 }), 'healthy');
+});
+
+test('install.sh health check: without "Subscribed" the service is not healthy', () => {
+  assert.equal(healthCheck({ subscribed: false, after: 3 }), 'unhealthy');
+  assert.equal(healthCheck({ subscribed: false, after: 60000 }), 'unhealthy');
+});
